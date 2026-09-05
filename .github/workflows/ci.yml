@@ -1,0 +1,44 @@
+name: Console CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: stabbur-frontend
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: stabbur-dev/stabbur-client-rust
+          ref: main
+          path: stabbur-client-rust
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: stable
+          components: rustfmt,clippy
+      - name: Check console
+        working-directory: stabbur-frontend
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo test --locked
+          cargo build --release --locked
+          node --test tests/*.test.mjs
+          python3 scripts/check-contract.py
+      - name: Check advisories and licenses
+        working-directory: stabbur-frontend
+        run: |
+          cargo install cargo-deny --locked
+          cargo install cargo-audit --locked
+          cargo deny check
+          cargo audit
+      - name: Record development revisions
+        run: |
+          git -C stabbur-frontend rev-parse HEAD
+          git -C stabbur-client-rust rev-parse HEAD

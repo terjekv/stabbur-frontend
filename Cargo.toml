@@ -1,0 +1,37 @@
+[workspace]
+resolver = "3"
+
+[package]
+name = "stabbur-frontend"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "Apache-2.0"
+description = "Self-hosted Stabbur management console with protected server-side sessions"
+
+[dependencies]
+actix-web = { version = "4.11", default-features = false, features = ["macros", "cookies"] }
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+futures-util = "0.3"
+rand = "0.9"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+stabbur_client = { version = "=0.1.0", path = "../stabbur-client-rust" }
+subtle = "2.6"
+tokio = { version = "1.47", features = ["sync", "time"] }
+url = "2.5"
+
+[lints.rust]
+unsafe_code = "forbid"
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+
+[profile.release]
+lto = "thin"
+strip = "symbols"

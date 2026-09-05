@@ -1,0 +1,29 @@
+[Unit]
+Description=Stabbur management console
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+ExecStart=/usr/local/bin/stabbur-frontend
+Environment=STABBUR_FRONTEND_BIND=127.0.0.1:3000
+Environment=STABBUR_FRONTEND_ORIGIN=https://console.example.org
+Environment=STABBUR_SERVER_ORIGIN=https://stabbur.example.org
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
