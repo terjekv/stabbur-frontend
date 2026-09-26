@@ -3,7 +3,7 @@ resolver = "3"
 
 [package]
 name = "stabbur-frontend"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2024"
 rust-version = "1.88"
 license = "Apache-2.0"
@@ -18,7 +18,7 @@ rand = "0.9"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10"
-stabbur_client = { version = "=0.1.0", path = "../stabbur-client-rust" }
+stabbur_client = { version = "=0.0.1", path = "../stabbur-client-rust" }
 subtle = "2.6"
 tokio = { version = "1.47", features = ["sync", "time"] }
 url = "2.5"

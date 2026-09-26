@@ -23,6 +23,8 @@ cargo run --locked
 
 Open `http://127.0.0.1:3000` and sign in using the same username and password as the CLI.
 Development HTTP requires an explicit flag and loopback origins/binding. Never expose this mode.
+Opening the development HTTP console through another loopback hostname redirects to the configured
+console address before sign-in. Login and mutation requests still require that exact origin.
 
 ## Production
 
@@ -54,12 +56,23 @@ and binary uploads. Log views use bounded pages. The CLI also supports live reco
 
 ## Reviewed operations
 
-Open a resource to inspect its details and available actions. Forms retain optimistic revisions;
-revision 0 means a channel binding must not already exist. Refresh after a stale-revision rejection.
-Resource values are rendered as text, including logs and arbitrary metadata. Complex builder or
-installation definitions use explicit JSON fields. All mutation forms require review confirmation.
+Software, build targets, runs and releases have shareable fragment URLs with working Back and
+Refresh navigation. Software views show current channels, recent build status, next checks and
+worker blockers. Search and status filters apply to loaded items; Load more extends the set.
 
-Catalog plans are additive. Upload a manifest, generate a plan, inspect every action, then apply it.
+Build forms use named software and recipe selectors with explicit immutable revision selection.
+Schedules have manual and recurring controls; new console targets default to disabled. Enabling a
+recurring target can queue work immediately. Build now opens the run's progress, replayed logs and
+verification result. Log following uses bounded pages, sequence deduplication and pause/resume.
+
+Promotion selects an exact release and platform variant, previews the old and new channel, and
+retains the observed concurrency revision internally. Stale submissions are rejected; close the
+form and refresh to review current state before retrying. Other edit forms preserve unchanged
+values and show safe field diagnostics inside the active dialog. Resource values are always text,
+including logs and arbitrary metadata. Advanced operations and JSON definitions remain available.
+
+Catalog plans are additive. Upload a manifest, generate a plan, inspect the visible action summary,
+source definitions and targets that will be enabled, then confirm and apply it.
 The backend recomputes the plan and rejects drift before mutations. Individual mutations also keep
 revision/sequence checks. A multi-action catalog sync is not one distributed transaction: after an
 interruption, review a fresh plan to resume. Recurring targets may start work as soon as enabled.
@@ -71,6 +84,19 @@ OpenAPI document and the gateway; use `--update` only after reviewing contract c
 The server's `scripts/check-workspace-integration.py` exercises all four sibling repositories with
 a disposable local server and tests login, roles, origin/CSRF rejection, logout and revocation.
 
-This console targets the coordinated unreleased 0.1 contract, currently 75 public operations. Local
+This console targets the coordinated 0.0.1 release contract, currently 75 public operations. Local
 integration is development evidence; released compatibility requires the same immutable-image
 acceptance evidence as the supported client and CLI. No server image is published by these scripts.
+
+## Import recipes
+
+Open **Recipes → Import recipes**, choose a worker inventory or scan an HTTPS repository at an
+exact commit, and select recipes. Workers publish their local AutoPkg inventory when started with
+`--discover-autopkg`; an optional worker-local `--autopkg-prefs` selects a profile. Refresh the
+console after the next five-minute observation, or use **Check scan** for a requested scan.
+
+Review parent dependencies and pinned sources, supply software names, artifact architecture and
+output variables, then review and apply the catalog plan. Imported targets stay disabled and
+manual. Uncommitted overrides and unresolved dependencies show actionable blockers. Import does
+not accept AutoPkg trust or run a build. Enable a target only after reviewing its source and
+verification policy. Existing resources with matching names appear as updates in the plan.
