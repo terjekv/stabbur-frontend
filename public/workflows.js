@@ -49,6 +49,7 @@ export function createWorkflows(ui) {
     clearErrors,
     announce,
     navigate,
+    reviewCatalog,
     renderRoute,
   } = ui;
   async function list(id, parameters) {
@@ -1226,7 +1227,7 @@ export function createWorkflows(ui) {
         const selections = [...selected].map(([identifier, inputs]) => ({ identifier, slug: inputs.slug.value, name: inputs.name.value, architecture: inputs.architecture.value, minimum_macos: inputs.minimum.value || null, version_variable: inputs.version.value, artifact_variable: inputs.artifact.value, media_type: inputs.media.value }));
         if (new Set(selections.map(selection => selection.slug)).size !== selections.length) throw new Error("Choose one installer per software, or give each selected installer a unique software slug.");
         const desired = object(await request("/api/recipe-import", { snapshot: snapshotId, selections }));
-        if (ui.current(token) && selectedGeneration === selectionGeneration) await catalog(desired);
+        if (ui.current(token) && selectedGeneration === selectionGeneration) await reviewCatalog(desired);
       });
       review.disabled = true;
       inventory.append(filters, entries, form);

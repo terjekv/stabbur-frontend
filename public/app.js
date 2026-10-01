@@ -109,6 +109,7 @@ function announce(text) {
   feedback(text);
 }
 function expire() {
+  pendingCatalogImport = null;
   session = null;
   clearTimeout(expiryTimer);
   cleanupView();
@@ -281,6 +282,7 @@ function renderShell() {
   });
   root.append(skip, sidebar, main);
 }
+let pendingCatalogImport = null;
 function navigate(group, id) {
   const hash = routeHash(group, id);
   if (location.hash === hash) return renderRoute();
@@ -300,7 +302,12 @@ async function renderRoute() {
     else node.removeAttribute("aria-current");
   });
   try {
-    if (route.group === "catalog") return await workflows.catalog();
+    if (route.group === "catalog") {
+      const imported = pendingCatalogImport;
+      pendingCatalogImport = null;
+      return await workflows.catalog(imported);
+    }
+    pendingCatalogImport = null;
     if (route.group === "discovery") return await workflows.discovery();
     if (
       route.id &&
@@ -1040,6 +1047,10 @@ const workflows = createWorkflows({
   clearErrors,
   announce,
   navigate,
+  reviewCatalog(manifest) {
+    pendingCatalogImport = manifest;
+    return navigate("catalog");
+  },
   renderRoute,
   operationActions(parent, key, params, value) {
     const disclosure = element("details", null, "advanced");
