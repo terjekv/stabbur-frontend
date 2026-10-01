@@ -88,15 +88,27 @@ This console targets the coordinated 0.0.1 release contract, currently 75 public
 integration is development evidence; released compatibility requires the same immutable-image
 acceptance evidence as the supported client and CLI. No server image is published by these scripts.
 
-## Import recipes
+## Add software from recipes
 
-Open **Recipes → Import recipes**, choose a worker inventory or scan an HTTPS repository at an
-exact commit, and select recipes. Workers publish their local AutoPkg inventory when started with
-`--discover-autopkg`; an optional worker-local `--autopkg-prefs` selects a profile. Refresh the
-console after the next five-minute observation, or use **Check scan** for a requested scan.
+Open **Add software from recipes**, choose a worker inventory, or use **Firefox starter source**
+and scan the displayed immutable commit. Scan progress updates automatically. Workers publish
+local inventory with `--discover-autopkg`; `--autopkg-prefs` optionally selects their local profile.
 
-Review parent dependencies and pinned sources, supply software names, artifact architecture and
-output variables, then review and apply the catalog plan. Imported targets stay disabled and
-manual. Uncommitted overrides and unresolved dependencies show actionable blockers. Import does
-not accept AutoPkg trust or run a build. Enable a target only after reviewing its source and
-verification policy. Existing resources with matching names appear as updates in the plan.
+Recipes are grouped by software and observed processing intent. Recommended presets match an exact
+reviewed source pin; they are suggested configuration, not successful-build evidence. Artifact recipes
+exclude observed install/publish workflows. All discovered includes unsupported and legacy entries.
+Purpose follows known processors across the parent chain, not identifier suffixes, and is not a sandbox.
+Missing dependencies, missing parent trust and legacy metadata prevent guided import. Review and commit
+trusted overrides, publish their exact source revisions, then refresh inventory; trust is never accepted
+automatically. Manual catalog definitions remain available for separately reviewed workflows.
+
+Each selected installer has its own architecture, minimum macOS and advanced output settings. No
+architecture is inferred from the worker. FirefoxSignedPkg at the starter pin suggests `version` and
+`pathname`. Other recipes require explicit reviewed output mappings. The imported target stays disabled
+and manual. Review and enable it, build once, inspect the release's artifact and verification results,
+then promote or configure scheduling. Failures show their cause above the logs. Logs retain separate
+incremental UTF-8 streams per attempt so interleaved partial messages remain readable.
+
+Coordinated local development requires the updated server and client beside this checkout. Old catalog
+snapshots remain readable but need rescanning for guided import. This is local development evidence,
+not an immutable-image release compatibility claim.

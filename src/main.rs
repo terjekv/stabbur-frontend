@@ -359,6 +359,10 @@ async fn asset(path: web::Path<String>) -> HttpResponse {
             "text/javascript; charset=utf-8",
             include_str!("../public/model.js"),
         ),
+        "recipe-model.js" => (
+            "text/javascript; charset=utf-8",
+            include_str!("../public/recipe-model.js"),
+        ),
         "workflows.js" => (
             "text/javascript; charset=utf-8",
             include_str!("../public/workflows.js"),

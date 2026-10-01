@@ -249,7 +249,7 @@ function renderShell() {
   sidebar.append(brand, element("p", "MANAGEMENT", "eyebrow"));
   const nav = element("nav");
   nav.setAttribute("aria-label", "Management");
-  for (const group of [...groups, { id: "discovery", title: "Import recipes" }, { id: "catalog", title: "Catalog plans" }]) {
+  for (const group of [...groups, { id: "discovery", title: "Add software from recipes" }, { id: "catalog", title: "Catalog plans" }]) {
     const item = element("a", group.title, "nav-item");
     item.href = routeHash(group.id);
     item.dataset.group = group.id;
@@ -335,7 +335,7 @@ async function loadGroup(group) {
   const actions = element("div", null, "actions");
   actions.append(button("Refresh", () => loadGroup(group), "button secondary"));
   if (["recipes", "workers"].includes(group.id))
-    actions.append(button("Import recipes", () => navigate("discovery"), "button primary"));
+    actions.append(button("Add software from recipes", () => navigate("discovery"), "button primary"));
   if (group.create)
     actions.append(
       button(

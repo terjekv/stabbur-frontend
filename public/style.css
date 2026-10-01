@@ -848,3 +848,12 @@ h1 {
 @media (max-width: 680px) {
   .import-fields, .import-names-row { grid-template-columns: minmax(0, 1fr); }
 }
+
+.workflow-steps { padding: 16px; background: #e8eee5; border-radius: 8px; }
+.recipe-choice .badge { margin-left: 12px; }
+.recipe-choice details { margin-top: 12px; }
+.toolbar button[aria-pressed="true"] { background: var(--green); color: white; }
+.import-names-row { margin: 18px 0; }
+.worker-summary { border-top: 1px solid var(--line); margin-top: 16px; }
+
+.import-names-row > p, .import-names-row > details { grid-column: 1 / -1; }

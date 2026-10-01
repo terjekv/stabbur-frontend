@@ -1,5 +1,5 @@
 {
-  "contract_sha256": "4a979bb27b5e4651320f87d7345995bd24868aa2a0cb9a072936f70dffda4901",
+  "contract_sha256": "6c7859423dbd10102ccaca1fae7a6a4412c59ce963e632c35a6820b19bd3cf44",
   "excluded": {
     "bootstrap": "Bootstrap remains a local server administration operation.",
     "download_artifact_content": "Dedicated streaming download endpoint.",
@@ -2948,6 +2948,17 @@
           "description": "Stable builder adapter selector.",
           "type": "string"
         },
+        "guidance": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/components/schemas/RecipeCatalogGuidanceResponse",
+              "description": "Observed display hints, never a safety or readiness guarantee. Absent in legacy snapshots."
+            }
+          ]
+        },
         "identifier": {
           "description": "Builder-owned stable identifier or entrypoint.",
           "type": "string"
@@ -2982,6 +2993,24 @@
         "builder",
         "parents",
         "required_capabilities"
+      ],
+      "type": "object"
+    },
+    "RecipeCatalogGuidanceResponse": {
+      "description": "Bounded recipe display metadata observed by a worker.",
+      "properties": {
+        "name": {
+          "description": "Display name derived from the recipe filename, never its input values.",
+          "type": "string"
+        },
+        "purpose": {
+          "$ref": "#/components/schemas/RecipePurposeResponse",
+          "description": "Observed processing intent across the parent chain."
+        }
+      },
+      "required": [
+        "name",
+        "purpose"
       ],
       "type": "object"
     },
@@ -3363,6 +3392,17 @@
         "items"
       ],
       "type": "object"
+    },
+    "RecipePurposeResponse": {
+      "description": "Observed recipe intent; custom processors may have additional effects.",
+      "enum": [
+        "fetch_artifact",
+        "build_artifact",
+        "install",
+        "publish",
+        "unknown"
+      ],
+      "type": "string"
     },
     "RecipeResponse": {
       "description": "Recipe metadata response.",
