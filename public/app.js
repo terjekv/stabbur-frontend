@@ -422,8 +422,9 @@ async function loadGroup(group) {
     "search",
     parseRoute(location.hash).search,
   );
-  const statusLabel = element("label", "Status", "field");
+  const statusField = element("div", null, "field");
   const status = element("select");
+  status.setAttribute("aria-label", "Status");
   status.append(new Option("All statuses", ""));
   for (const state of group.id === "targets"
     ? ["true", "false"]
@@ -447,9 +448,9 @@ async function loadGroup(group) {
       ),
     );
   status.value = parseRoute(location.hash).state;
-  statusLabel.append(status);
+  statusField.append(status);
   if (["software", "targets", "runs"].includes(group.id))
-    filters.append(statusLabel);
+    filters.append(statusField);
   main.insertBefore(filters, content);
   let cursor = null;
   const seen = new Set();
