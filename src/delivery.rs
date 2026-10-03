@@ -790,7 +790,7 @@ pub async fn serve(
     }
 }
 
-fn profile_uuid() -> String {
+pub(crate) fn profile_uuid() -> String {
     let text = format!("{:032x}", rand::random::<u128>());
     format!(
         "{}-{}-4{}-a{}-{}",

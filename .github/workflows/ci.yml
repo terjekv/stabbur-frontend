@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: terjekv/stabbur-client-rust
-          ref: 9d088c263c843d6fc71524acba2cb31b075d5280 # Coordinated recipe-onboarding client
+          ref: 0634d8c177aa90c1bd86056a75fc67d2ae282ce5 # Coordinated recipe-onboarding client
           path: stabbur-client-rust
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
         with:

@@ -84,7 +84,7 @@ OpenAPI document and the gateway; use `--update` only after reviewing contract c
 The server's `scripts/check-workspace-integration.py` exercises all four sibling repositories with
 a disposable local server and tests login, roles, origin/CSRF rejection, logout and revocation.
 
-This console targets the coordinated 0.0.1 release contract, currently 75 public operations. Local
+This console targets the coordinated 0.0.1 release contract, 75 public operations in the released image; this development branch pins 86. Local
 integration is development evidence; released compatibility requires the same immutable-image
 acceptance evidence as the supported client and CLI. No server image is published by these scripts.
 
@@ -158,3 +158,25 @@ snapshot: remove that version in **Munki delivery** as part of the same incident
 The console must be available for device downloads. Deploy one writer with persistent storage;
 replication, multi-writer hosting and automatic external-repository synchronization are not provided.
 The existing CLI `munki-export` remains available for independently operated repositories.
+
+## Saved exports (development server)
+
+Use **Exports** to select applications from the library, follow channels or pin releases, save
+installation settings, preview a whole batch, then publish it atomically. Editing a draft does not
+change the published repository. Export definitions and publication history live in the server
+and are shared with `stabbur exports` in the CLI. This requires the coordinated development server.
+
+Choose hosted Munki delivery or repository files. **Destination setup** issues download-only
+system profiles with separate export-scoped credentials; administrators can revoke every previous
+profile for one export. General API/CLI withdrawal immediately filters these hosted snapshots.
+The normal manifest offers optional installs; the explicit disposable-test profile requests all
+selected apps. The protected console origin must be reachable by managed Macs over HTTPS.
+
+Snapshot archives contain verified installers, authoritative pkginfo, catalogs and provenance.
+They do not contain manifests. For an existing Munki repository, merge the files, regenerate
+catalogs and retain existing assignments. Downloads are prepared in private temporary storage;
+allow enough free disk space for the complete repository and uncompressed archive.
+
+The earlier delivery feature documented above remains available under **Exports → Earlier Munki
+publications**, with unchanged URLs and local storage. It is not automatically migrated. New saved
+exports need no `STABBUR_FRONTEND_DATA_DIR`; their durable state is in the server database.

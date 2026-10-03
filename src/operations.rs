@@ -203,6 +203,9 @@ mod tests {
     #[test]
     fn gateway_cannot_select_internal_paths_headers_or_unknown_operations() {
         for id in [
+            "create_export_reader",
+            "export_repository",
+            "apply_export",
             "bootstrap",
             "login",
             "stream_run_events",

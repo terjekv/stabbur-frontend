@@ -171,7 +171,7 @@ export function parseRoute(hash) {
     const parts = path.split("/").filter(Boolean).map(decodeURIComponent);
     const group = parts[0] || "software";
     if (
-      !["catalog", "discovery", "delivery", "releases", ...groups.map((item) => item.id)].includes(
+      !["catalog", "discovery", "exports", "delivery", "releases", ...groups.map((item) => item.id)].includes(
         group,
       ) ||
       parts.length > 2

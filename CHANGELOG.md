@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Add an Exports workspace with bulk software selection, channel following or exact pins, reusable installation settings, complete batch review, verified repository archives and device setup. Definitions and publication history live in the server. Earlier delivery repositories remain available under Exports.
+
 ## [0.0.1] - 2026-09-26
 
 - Target the first coordinated release as 0.0.1.

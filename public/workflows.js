@@ -442,12 +442,10 @@ export function createWorkflows(ui) {
     const related = targets.filter(
       (target) => target.software_id === software.id,
     );
-    let published=[];
-    try { const delivery=await request("/api/delivery"); published=(delivery.entries||[]).filter(e=>e.spec.software===software.slug); } catch { /* Delivery has its own actionable status page. */ }
-    if(!ui.current(token))return;
-    const step=nextStep(status,related,published);
+    const step=nextStep(status,related,[]);
+    if(step.group==="delivery") { step.title="Choose an export";step.detail="This software is ready in your library. Include it in a saved export when you want to distribute it.";step.group="exports";step.id=undefined; }
     const journey=section(main,"Next step");journey.append(el("h3",step.title),el("p",step.detail),link(step.title,step.group,step.id,"button primary"));
-    journey.append(el("p","Choose app → Check readiness → Build → Test → Publish", "workflow-steps"),link("Munki delivery","delivery",software.id));
+    journey.append(el("p","Build → Review → Add to library → Choose exports", "workflow-steps"),link("Open exports","exports"));
     overview.before(journey);
     const targetPanel = section(main, "Build targets");
     if (related.length)
@@ -815,7 +813,7 @@ export function createWorkflows(ui) {
         "muted",
       ),
     );
-    evidence.append(link("Continue to Munki delivery","delivery",software.id,"button primary"));
+    evidence.append(link("Choose an export","exports",undefined,"button primary"));
     advanced(main, release);
   }
 

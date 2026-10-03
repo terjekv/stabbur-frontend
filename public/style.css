@@ -857,3 +857,11 @@ h1 {
 .worker-summary { border-top: 1px solid var(--line); margin-top: 16px; }
 
 .import-names-row > p, .import-names-row > details { grid-column: 1 / -1; }
+
+.export-selection-list {display:grid;gap:.6rem;max-height:65vh;overflow:auto;padding:.2rem;}
+.export-selection {border:1px solid var(--border,#c8d0da);border-radius:.5rem;padding:1rem;}
+.export-selection-heading {font-weight:650;}
+.export-selection-controls {display:flex;gap:1rem;align-items:end;flex-wrap:wrap;padding-top:.6rem;}
+.export-selection-controls .field {flex:1;min-width:12rem;}
+.export-selection-controls[hidden],.export-selection[hidden] {display:none;}
+.export-selection-count {font-weight:600;}

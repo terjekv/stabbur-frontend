@@ -1,5 +1,6 @@
 //! Self-hosted management console: Stabbur credentials stay on the server.
 mod delivery;
+mod exports;
 mod operations;
 mod security;
 
@@ -376,6 +377,10 @@ async fn asset(path: web::Path<String>) -> HttpResponse {
             "text/javascript; charset=utf-8",
             include_str!("../public/recipe-model.js"),
         ),
+        "exports.js" => (
+            "text/javascript; charset=utf-8",
+            include_str!("../public/exports.js"),
+        ),
         "delivery.js" => (
             "text/javascript; charset=utf-8",
             include_str!("../public/delivery.js"),
@@ -404,6 +409,19 @@ fn routes(config: &mut web::ServiceConfig) {
         .route("/api/catalog/{action}", web::post().to(catalog))
         .route("/api/recipe-import", web::post().to(prepare_import))
         .route("/api/download/{digest}", web::get().to(download))
+        .route("/api/exports/apply", web::post().to(exports::apply))
+        .route(
+            "/api/exports/{export}/profile",
+            web::post().to(exports::profile),
+        )
+        .route(
+            "/api/exports/{export}/snapshots/{generation}/download",
+            web::get().to(exports::bundle),
+        )
+        .route(
+            "/munki/exports/{export}/{kind}/{name}",
+            web::get().to(exports::serve),
+        )
         .route("/api/delivery", web::get().to(delivery::status))
         .route("/api/delivery/publish", web::post().to(delivery::publish))
         .route("/api/delivery/remove", web::post().to(delivery::remove))
