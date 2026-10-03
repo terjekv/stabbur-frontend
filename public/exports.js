@@ -16,6 +16,18 @@ export function decodeExportPlan(value) {
   if(plan.ready && plan.changes.some(c=>c.action==="blocked"))throw new Error("Blocked export cannot be ready");
   return plan;
 }
+export function sameExportDefinition(left,right) {
+  const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==="object"?Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])])):value;
+  const normalized=definition=>({...definition,selections:[...definition.selections].sort((a,b)=>a.software.localeCompare(b.software))});
+  return JSON.stringify(canonical(normalized(left)))===JSON.stringify(canonical(normalized(right)));
+}
+export function decodeExportSnapshot(value) {
+  const view=object(value),snapshot=object(view.snapshot);
+  if(!Number.isSafeInteger(snapshot.generation)||snapshot.generation<1||!Array.isArray(snapshot.items)||snapshot.items.length>400||!Array.isArray(view.unavailable_releases)||!view.unavailable_releases.every(id=>typeof id==="string"))throw new Error("Unexpected published snapshot");
+  if(!["hosted","download"].includes(snapshot.definition?.destination)||typeof snapshot.definition?.catalog!=="string")throw new Error("Unexpected snapshot destination");
+  for(const item of snapshot.items)if(typeof item.name!=="string"||typeof item.version!=="string"||typeof item.release!=="string"||!Array.isArray(item.architectures)||!item.architectures.every(a=>["aarch64","x86_64"].includes(a)))throw new Error("Unexpected published installer");
+  return view;
+}
 export function defaultSelection(software) {
   const preset=software.installation?.install?.stabbur_munki;
   return {software:software.id,source:{kind:"channel",channel:"testing"},architectures:[],settings:preset?.application&&preset?.bundle_id?{format:preset.format||"pkg",detection:{kind:"application",name:preset.application,bundle_id:preset.bundle_id},display_name:"",description:"",category:""}:null};
@@ -75,14 +87,24 @@ export function createExports(ui) {
     }
     if(!software.length)list.append(el("p","Your software library is empty."),link("Add software from recipes","discovery"));
     search.addEventListener("input",()=>cards.forEach(({row,text})=>row.hidden=!text.includes(search.value.toLowerCase())));updateCount();
-    async function save(){if(!form.reportValidity())return null;const definition={name:name.value,slug:slug.value,destination:destination.value,catalog:catalog.value,selections:[...selections.values()]};record=decodeExport(await api(record?"update_export":"create_export",{...(record?{parameters:{export:record.id},revision:record.revision}:{}),body:definition}));return record;}
+    async function save(){if(!form.reportValidity())return null;const definition={name:name.value,slug:slug.value,destination:destination.value,catalog:catalog.value,selections:[...selections.values()]};if(record&&sameExportDefinition(definition,record.definition))return record;record=decodeExport(await api(record?"update_export":"create_export",{...(record?{parameters:{export:record.id},revision:record.revision}:{}),body:definition}));return record;}
     submit(form,"Save selection",async()=>{const saved=await save();if(saved)navigate("exports",saved.id);});
     form.append(button("Preview batch",async()=>{try{const saved=await save();if(saved)await preview(saved);}catch(error){showError(error);}},"button secondary"));
     if(record){
       const published=el("section",null,"panel resource-section");published.append(el("h2","Published snapshot"));main.append(published);
       if(record.generation){published.append(el("p",`Snapshot ${record.generation}. Saving a selection does not change what devices receive.`));const download=el("a","Download repository files","button secondary");download.href=`/api/exports/${encodeURIComponent(record.id)}/snapshots/${record.generation}/download`;download.download="";published.append(download,el("p","The archive contains pkgs, pkgsinfo and catalogs. It contains no manifests. For an existing repository, merge the selected files, regenerate its catalogs with makecatalogs, and keep managing assignments there.","muted"));}
       else published.append(el("p","Nothing published yet. Preview the batch to see what is ready."));
-      if(record.generation&&record.definition.destination==="hosted")setup(published,record);
+      if(record.generation){
+        const current=decodeExportSnapshot(await api("get_export_snapshot",{parameters:{export:record.id,generation:String(record.generation)}}));
+        if(!ui.current(token))return;
+        published.prepend(el("p",`Published catalog: ${current.snapshot.definition.catalog}`,"muted"));
+        const versions=el("div",null,"export-published-versions");
+        for(const item of current.snapshot.items){const row=el("p");const unavailable=current.unavailable_releases.includes(item.release);row.append(el("strong",`${item.name} ${item.version}`),document.createTextNode(` · ${item.architectures.map(a=>a==="aarch64"?"Apple silicon":"Intel").join(" / ")}${unavailable?" · Unavailable — omitted from hosted delivery":""}`));versions.append(row);}
+        if(!current.snapshot.items.length)versions.append(el("p","This published snapshot is empty."));published.append(versions);
+        if(current.unavailable_releases.length)published.append(el("p","A published release was withdrawn or rejected. Review a fresh batch before downloading repository files.","callout warning"));
+        if(current.snapshot.definition.destination==="hosted")setup(published,record);
+        main.insertBefore(published,form);
+      }
       const history=el("details",null,"advanced");history.append(el("summary","Publication history"));published.append(history);let loaded=false;history.addEventListener("toggle",async()=>{if(!history.open||loaded)return;try{let after="0";const seen=new Set();do{const page=object(await api("list_export_history",{parameters:{export:record.id},query:{after,limit:"200"}}));if(!Array.isArray(page.items))throw new Error("Unexpected export history");for(const snapshot of page.items)history.append(el("p",`Snapshot ${snapshot.generation} · ${snapshot.items.length} installers · ${formatTime(snapshot.created_at)}`));after=page.next_cursor;if(after&&seen.has(after))throw new Error("History pagination did not finish");seen.add(after);}while(after);loaded=true;}catch(error){showError(error);}});
     }
   }
@@ -101,6 +123,7 @@ export function createExports(ui) {
   }
   async function preview(record){
     const plan=decodeExportPlan(await api("plan_export",{parameters:{export:record.id}}));
+    if(plan.definition_revision!==record.revision)throw new Error("This export was edited elsewhere. Reload it before reviewing the batch.");
     const body=openDialog(`Preview · ${record.definition.name}`),form=el("form");body.append(form);
     form.append(el("p",plan.ready?"All selected applications are ready. Publishing replaces the complete snapshot in one operation.":"Resolve the blocked applications before publishing. The current published snapshot will remain available.",plan.ready?"callout":"callout warning"));
     if(!plan.changes.length)form.append(el("p","This export is empty. Publishing it creates an empty repository."));
