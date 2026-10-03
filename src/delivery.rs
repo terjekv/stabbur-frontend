@@ -711,7 +711,7 @@ pub async fn profile(
     // This is a credential download, never JSON rendered into the management UI.
     Ok(HttpResponse::Ok().insert_header((header::CONTENT_DISPOSITION,"attachment; filename=Stabbur-Munki.mobileconfig")).content_type("application/x-plist").body(xml(&json!({
         "PayloadType":"Configuration","PayloadVersion":1,"PayloadScope":"System","PayloadIdentifier":format!("org.stabbur.munki.{}",input.channel.name()),"PayloadUUID":profile_uuid(),"PayloadDisplayName":format!("Stabbur Munki {}",input.channel.name()),
-        "PayloadContent":[{ "PayloadType":"com.googlecode.munki","PayloadVersion":1,"PayloadIdentifier":format!("org.stabbur.munki.{}.preferences",input.channel.name()),"PayloadUUID":profile_uuid(),
+        "PayloadContent":[{ "PayloadType":"ManagedInstalls","PayloadVersion":1,"PayloadIdentifier":format!("org.stabbur.munki.{}.preferences",input.channel.name()),"PayloadUUID":profile_uuid(),
             "SoftwareRepoURL":preferences["SoftwareRepoURL"],"ClientIdentifier":preferences["ClientIdentifier"],"AdditionalHttpHeaders":preferences["AdditionalHttpHeaders"],"InstallAppleSoftwareUpdates":false }]
     }))?))
 }
