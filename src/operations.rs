@@ -39,6 +39,22 @@ pub struct OperationInput {
     idempotency_key: Option<String>,
 }
 
+impl OperationInput {
+    fn withdrawn_release(&self, id: &str) -> Result<Option<stabbur_client::ReleaseId>, Failure> {
+        Ok(if id == "withdraw_release" {
+            Some(
+                self.parameters
+                    .get("release")
+                    .ok_or_else(|| Failure::bad_request("missing_parameter"))?
+                    .parse()
+                    .map_err(Failure::from)?,
+            )
+        } else {
+            None
+        })
+    }
+}
+
 /// Zero proves an absent channel binding; other operations require an observed positive revision.
 enum RevisionPrecondition {
     AbsentChannel,
@@ -63,9 +79,11 @@ impl RevisionPrecondition {
 pub struct ValidatedOperation {
     request: RawRequest,
     credential_download: bool,
+    withdrawn_release: Option<stabbur_client::ReleaseId>,
 }
 impl ValidatedOperation {
     pub fn resolve(contract: &Contract, id: &str, input: OperationInput) -> Result<Self, Failure> {
+        let withdrawn_release = input.withdrawn_release(id)?;
         let operation = contract
             .operations
             .iter()
@@ -162,7 +180,11 @@ impl ValidatedOperation {
         Ok(Self {
             request,
             credential_download: operation.credential_download,
+            withdrawn_release,
         })
+    }
+    pub fn withdrawn_release(&self) -> Option<stabbur_client::ReleaseId> {
+        self.withdrawn_release
     }
     pub fn request(&self) -> &RawRequest {
         &self.request
@@ -181,6 +203,9 @@ mod tests {
     #[test]
     fn gateway_cannot_select_internal_paths_headers_or_unknown_operations() {
         for id in [
+            "create_export_reader",
+            "export_repository",
+            "apply_export",
             "bootstrap",
             "login",
             "stream_run_events",

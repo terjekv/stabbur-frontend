@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: terjekv/stabbur-client-rust
-          ref: e31e621f6eee771aa47a5d95d6bff83993e413b5 # Reviewed client 0.0.1 source
+          ref: fa90bae509accc2d1d3b61ae288c6ea7a7ba86ea # Searchable library and capability queues
           path: stabbur-client-rust
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
         with:

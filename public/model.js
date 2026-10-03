@@ -171,7 +171,7 @@ export function parseRoute(hash) {
     const parts = path.split("/").filter(Boolean).map(decodeURIComponent);
     const group = parts[0] || "software";
     if (
-      !["catalog", "discovery", "releases", ...groups.map((item) => item.id)].includes(
+      !["attention", "catalog", "discovery", "exports", "delivery", "releases", ...groups.map((item) => item.id)].includes(
         group,
       ) ||
       parts.length > 2
@@ -322,6 +322,7 @@ export function decodeRecipeSnapshot(value) {
       !Array.isArray(manifest.recipes) || !Array.isArray(manifest.diagnostics) ||
       manifest.recipes.some(entry => !entry || !text(entry.identifier) || !text(entry.builder) ||
         !Array.isArray(entry.parents) || !entry.parents.every(text) ||
+        (entry.guidance != null && (!text(entry.guidance.name) || !["fetch_artifact", "build_artifact", "install", "publish", "unknown"].includes(entry.guidance.purpose))) ||
         (entry.import_sources != null && (!Array.isArray(entry.import_sources) || !entry.import_sources.every(source)))) ||
       manifest.diagnostics.some(item => !item || !text(item.detail) || !text(item.code) ||
         (item.identifier != null && !text(item.identifier)) || !["info", "warning", "error"].includes(item.severity))) {

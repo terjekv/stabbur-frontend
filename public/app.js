@@ -12,6 +12,9 @@ import {
   decodeProblem,
   matchesFilter,
 } from "./model.js";
+import { createLibrary } from "./library.js";
+import { createExports } from "./exports.js";
+import { createDelivery } from "./delivery.js";
 import { createWorkflows } from "./workflows.js";
 const root = document.querySelector("#app");
 const dialog = document.querySelector("#dialog");
@@ -23,6 +26,10 @@ let generation = 0;
 let expiryTimer;
 let cleanupView = () => {};
 const descriptions = {
+  delivery_changed: "The channel or repository changed. Refresh and review the current version before publishing.",
+  delivery_not_configured: "Ask the console administrator to configure private Munki delivery storage.",
+  delivery_admin_required: "Munki publication and device profiles require a Stabbur administrator.",
+  delivery_storage_unavailable: "Delivery storage is unavailable. Ask the console administrator to check free space and storage permissions.",
   permission_denied: "Your account does not have permission for this action.",
   revision_changed:
     "This item changed. Refresh and review it before trying again.",
@@ -109,6 +116,8 @@ function announce(text) {
   feedback(text);
 }
 function expire() {
+  exports.clearSelection();
+  pendingCatalogImport = null;
   session = null;
   clearTimeout(expiryTimer);
   cleanupView();
@@ -164,9 +173,11 @@ async function request(path, payload, options = {}) {
     const url = URL.createObjectURL(blob);
     const link = element("a");
     link.href = url;
-    link.download = "stabbur-credential.json";
+    const filename=response.headers.get("content-disposition")?.match(/filename=([A-Za-z0-9_.-]+)/)?.[1];
+    link.download = filename || "stabbur-credential.json";
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+    if(filename === "Stabbur-Munki.mobileconfig") return {message:"Mac configuration profile downloaded. It contains a read-only repository credential; distribute it only to your managed Macs."};
     return {
       message:
         "Credential downloaded. Move it to protected storage; this value is shown only once.",
@@ -249,7 +260,8 @@ function renderShell() {
   sidebar.append(brand, element("p", "MANAGEMENT", "eyebrow"));
   const nav = element("nav");
   nav.setAttribute("aria-label", "Management");
-  for (const group of [...groups, { id: "discovery", title: "Import recipes" }, { id: "catalog", title: "Catalog plans" }]) {
+  for (const group of [{ id:"software", title:"Library" }, {id:"attention",title:"Needs attention"}, {id:"exports",title:"Exports"}, {...groups.find(g=>g.id==="runs"),title:"Activity"}, ...groups.filter(g=>!["software","runs"].includes(g.id)), {id:"catalog",title:"Catalog plans"}]) {
+    if (group.id === "targets") nav.append(element("p", "ADMINISTRATION", "eyebrow nav-section"));
     const item = element("a", group.title, "nav-item");
     item.href = routeHash(group.id);
     item.dataset.group = group.id;
@@ -281,6 +293,7 @@ function renderShell() {
   });
   root.append(skip, sidebar, main);
 }
+let pendingCatalogImport = null;
 function navigate(group, id) {
   const hash = routeHash(group, id);
   if (location.hash === hash) return renderRoute();
@@ -300,8 +313,17 @@ async function renderRoute() {
     else node.removeAttribute("aria-current");
   });
   try {
-    if (route.group === "catalog") return await workflows.catalog();
+    if (route.group === "catalog") {
+      const imported = pendingCatalogImport;
+      pendingCatalogImport = null;
+      return await workflows.catalog(imported);
+    }
+    pendingCatalogImport = null;
     if (route.group === "discovery") return await workflows.discovery();
+    if (route.group === "exports") return await exports.page(route.id);
+    if (route.group === "attention") return await library.page(true);
+    if (route.group === "software" && !route.id) return await library.page();
+    if (route.group === "delivery") return await delivery.page(route.id);
     if (
       route.id &&
       ["software", "targets", "runs", "releases"].includes(route.group)
@@ -334,8 +356,8 @@ async function loadGroup(group) {
   const { main, head } = heading(group.title, group.description);
   const actions = element("div", null, "actions");
   actions.append(button("Refresh", () => loadGroup(group), "button secondary"));
-  if (["recipes", "workers"].includes(group.id))
-    actions.append(button("Import recipes", () => navigate("discovery"), "button primary"));
+  if (["software", "recipes", "workers"].includes(group.id))
+    actions.append(button("Add software from recipes", () => navigate("discovery"), "button primary"));
   if (group.create)
     actions.append(
       button(
@@ -405,8 +427,9 @@ async function loadGroup(group) {
     "search",
     parseRoute(location.hash).search,
   );
-  const statusLabel = element("label", "Status", "field");
+  const statusField = element("div", null, "field status-filter");
   const status = element("select");
+  status.setAttribute("aria-label", "Status");
   status.append(new Option("All statuses", ""));
   for (const state of group.id === "targets"
     ? ["true", "false"]
@@ -430,9 +453,9 @@ async function loadGroup(group) {
       ),
     );
   status.value = parseRoute(location.hash).state;
-  statusLabel.append(status);
+  statusField.append(status);
   if (["software", "targets", "runs"].includes(group.id))
-    filters.append(statusLabel);
+    filters.append(statusField);
   main.insertBefore(filters, content);
   let cursor = null;
   const seen = new Set();
@@ -1024,7 +1047,7 @@ function operationForm(id, parameters = {}, revision, initial = {}) {
   });
   body.append(form);
 }
-const workflows = createWorkflows({
+const workflowUI = {
   api,
   request,
   element,
@@ -1040,6 +1063,10 @@ const workflows = createWorkflows({
   clearErrors,
   announce,
   navigate,
+  reviewCatalog(manifest) {
+    pendingCatalogImport = manifest;
+    return navigate("catalog");
+  },
   renderRoute,
   operationActions(parent, key, params, value) {
     const disclosure = element("details", null, "advanced");
@@ -1081,7 +1108,11 @@ const workflows = createWorkflows({
   cleanup(callback) {
     cleanupView = callback;
   },
-});
+};
+const workflows = createWorkflows(workflowUI);
+const delivery = createDelivery(workflowUI);
+const exports = createExports(workflowUI);
+const library = createLibrary({...workflowUI, exportSelection(rows) { exports.select(rows); return navigate("exports", "new"); }});
 window.addEventListener("hashchange", () => {
   renderRoute().catch(showError);
 });

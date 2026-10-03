@@ -569,6 +569,17 @@ details summary {
 .filters .field {
   margin: 0 0 16px;
 }
+.filters .field.status-filter {
+  flex: 0 0 auto;
+  min-width: 0;
+  width: 10rem;
+  max-width: 100%;
+}
+.filters .field input,
+.filters .field select {
+  height: 44px;
+  font-weight: 400;
+}
 .feedback {
   padding: 16px 20px;
   margin: 12px 0 20px;
@@ -848,3 +859,35 @@ h1 {
 @media (max-width: 680px) {
   .import-fields, .import-names-row { grid-template-columns: minmax(0, 1fr); }
 }
+
+.workflow-steps { padding: 16px; background: #e8eee5; border-radius: 8px; }
+.recipe-choice .badge { margin-left: 12px; }
+.recipe-choice details { margin-top: 12px; }
+.toolbar button[aria-pressed="true"] { background: var(--green); color: white; }
+.import-names-row { margin: 18px 0; }
+.worker-summary { border-top: 1px solid var(--line); margin-top: 16px; }
+
+.import-names-row > p, .import-names-row > details { grid-column: 1 / -1; }
+
+.export-selection-list {display:grid;gap:.6rem;max-height:65vh;overflow:auto;padding:.2rem;}
+.export-selection {border:1px solid var(--border,#c8d0da);border-radius:.5rem;padding:1rem;}
+.export-selection-heading {font-weight:650;}
+.export-selection-controls {display:flex;gap:1rem;align-items:end;flex-wrap:wrap;padding-top:.6rem;}
+.export-selection-controls .field {flex:1;min-width:12rem;}
+.export-selection-controls[hidden],.export-selection[hidden] {display:none;}
+.export-selection-count {font-weight:600;}
+
+/* Collection work remains compact and keyboard accessible. */
+.sidebar { overflow-y: auto; }
+.brand { margin-bottom: 24px; }
+.nav-section { margin: 26px 0 10px; }
+.library-table { overflow-x: auto; padding: 0; }
+.library-table table { width: 100%; }
+.library-table th { position: sticky; top: 0; background: #eef2ec; white-space: nowrap; }
+.library-table td small { display: block; margin-top: 5px; }
+.library-table input[type=checkbox] { width: 18px; height: 18px; }
+.library-table .button { white-space: nowrap; }
+.status-text { margin: 3px 0; font-size: 13px; }
+.export-picker-controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+
+.library-table a:not(.button) { color: var(--green, #205747); font-weight: 600; text-decoration-thickness: 1px; text-underline-offset: 3px; }

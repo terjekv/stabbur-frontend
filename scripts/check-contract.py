@@ -8,6 +8,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 # Each exclusion has a dedicated transport or deliberately belongs outside this console.
 EXCLUDED = {
+    'create_export_reader': 'Dedicated profile attachment; never expose its raw token in gateway JSON.',
+    'export_repository': 'Dedicated streaming device repository proxy with export-only authentication.',
+    'apply_export': 'Dedicated typed long-running batch publication endpoint.',
+
     'bootstrap': 'Bootstrap remains a local server administration operation.',
     'login': 'Dedicated login endpoint; credentials never pass through the gateway.',
     'me': 'Dedicated session endpoint.',

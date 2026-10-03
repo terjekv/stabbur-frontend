@@ -3,7 +3,6 @@ import {
   decodePage,
   decodeResource,
   decodeRecipeSnapshot,
-  decodeLogs,
   display,
   label,
   formatTime,
@@ -13,6 +12,9 @@ import {
   routeHash,
   catalogActionTitle,
 } from "./model.js";
+
+import { nextStep } from "./delivery.js";
+import { starterSource, recipeChoice, filterRecipeChoices, runFailure, createRunLogBuffer } from "./recipe-model.js";
 
 const terminal = new Set(["succeeded", "failed", "cancelled"]);
 
@@ -48,6 +50,7 @@ export function createWorkflows(ui) {
     clearErrors,
     announce,
     navigate,
+    reviewCatalog,
     renderRoute,
   } = ui;
   async function list(id, parameters) {
@@ -439,6 +442,11 @@ export function createWorkflows(ui) {
     const related = targets.filter(
       (target) => target.software_id === software.id,
     );
+    const step=nextStep(status,related,[]);
+    if(step.group==="delivery") { step.title="Choose an export";step.detail="This software is ready in your library. Include it in a saved export when you want to distribute it.";step.group="exports";step.id=undefined; }
+    const journey=section(main,"Next step");journey.append(el("h3",step.title),el("p",step.detail),link(step.title,step.group,step.id,"button primary"));
+    journey.append(el("p","Build → Review → Add to library → Choose exports", "workflow-steps"),link("Open exports","exports"));
+    overview.before(journey);
     const targetPanel = section(main, "Build targets");
     if (related.length)
       targetPanel.append(
@@ -501,6 +509,30 @@ export function createWorkflows(ui) {
       },
       "button primary",
     );
+    if(!target.enabled && target.schedule.kind==="manual") {
+      actions.append(button("Review and build",async()=>{
+        const body=openDialog("Review and build"),review=el("form");body.append(review);
+        const workers=await collection("list_workers");
+        const ready=workers.filter(w=>w.enabled && !w.draining && Date.now()-Date.parse(w.last_seen_at)<180000);
+        const recipes=await collection("list_recipes");
+        const revisions=(await mapBounded(recipes,r=>list("list_recipe_revisions",{recipe:r.id}))).flat();
+        const recipe=revisions.find(r=>r.id===target.recipe_revision_id);
+        if(!recipe)throw new Error("The selected recipe revision could not be loaded. Refresh before building.");
+        const matches=ready.filter(w=>([...(recipe.required_capabilities||[]), ...(recipe.builder==="autopkg"?["builder.autopkg","os.macos"]:["builder.fake"])]).every(c=>w.advertised_capabilities?.includes(c)&&w.allowed_capabilities?.includes(c)));
+        review.append(el("p","This enables a manual build target and runs it once. It does not create a recurring schedule."));
+        properties(review,{"Ready workers":matches.map(w=>w.name).join(", ")||"No matching worker seen recently","Recipe revision":target.recipe_revision_id});
+        const definition=recipe.definition||{};
+        for(const source of definition.sources||[])properties(review,{Repository:source.url,Commit:source.commit});
+        confirmation(review,"I reviewed these build instructions and want to run this manual build.");
+        const start=submitForm(review,"Enable and start build",async()=>{
+          await api("update_build_target",{parameters:{target:target.id},revision:target.revision,body:{enabled:true}});
+          const run=decodeResource(await api("trigger_build_target",{parameters:{target:target.id},idempotency_key:crypto.randomUUID()}));
+          await navigate("runs",run.id);
+        });
+        start.disabled=!matches.length;
+        if(!matches.length)review.append(el("p","Connect a matching worker, then reopen this review.","callout warning"),link("Check workers","workers"));
+      },"button primary"));
+    }
     trigger.disabled = !target.enabled;
     if (!target.enabled)
       trigger.title = "Enable this target before triggering a build.";
@@ -563,7 +595,10 @@ export function createWorkflows(ui) {
           "button danger",
         ),
       );
+    const failurePanel = el("div"); failurePanel.setAttribute("role", "status"); main.append(failurePanel);
+    const logBuffer = createRunLogBuffer();
     const logsPanel = section(main, "Build logs");
+    logsPanel.append(el("p", "Output is grouped by attempt and stream so messages remain readable across updates.", "muted"));
     const logs = el("pre", "", "logs");
     logs.tabIndex = 0;
     logs.setAttribute("aria-label", "Build log output");
@@ -593,6 +628,12 @@ export function createWorkflows(ui) {
     const results = section(main, "Result and verification");
     function result(value) {
       results.replaceChildren(el("h2", "Result and verification"));
+      failurePanel.replaceChildren();
+      const failure = runFailure(value);
+      if (failure) {
+        failurePanel.className = "callout error";
+        failurePanel.append(el("h2", failure.title), el("p", failure.action), link("Review available recipes", "discovery"));
+      } else failurePanel.className = "";
       if (value.result) {
         const build = value.result.build_result;
         properties(results, {
@@ -600,11 +641,11 @@ export function createWorkflows(ui) {
             ? label(value.result.publication.disposition)
             : "No release published",
           "Discovered version": build?.discovered_version || "—",
-          "Recipe trust": build?.provenance
+          "Recipe trust": failure?.trust || (build?.provenance
             ? build.provenance.recipe_trust_succeeded
               ? "Passed"
               : "Failed"
-            : "Not available",
+            : "Not available"),
         });
         if (Array.isArray(build?.verification_results))
           renderValue(results, build.verification_results);
@@ -658,10 +699,8 @@ export function createWorkflows(ui) {
           (item) => lastSequence === null || item.sequence > lastSequence,
         );
         if (fresh.length) {
+          logs.textContent = logBuffer.append(fresh);
           lastSequence = fresh.at(-1).sequence;
-          logs.textContent = (logs.textContent + decodeLogs(fresh)).slice(
-            -200000,
-          );
           logs.scrollTop = logs.scrollHeight;
         }
         pagesRead++;
@@ -774,6 +813,7 @@ export function createWorkflows(ui) {
         "muted",
       ),
     );
+    evidence.append(link("Choose an export","exports",undefined,"button primary"));
     advanced(main, release);
   }
 
@@ -1124,117 +1164,164 @@ export function createWorkflows(ui) {
 
   async function discovery() {
     const token = ui.begin();
-    const { main, head } = heading("Import recipes", "Discover AutoPkg recipes, review exact sources, and create disabled build targets.");
-    head.append(button("Refresh discovery", () => discovery(), "button secondary"));
-    const sourcePanel = section(main, "Choose a source");
-    sourcePanel.append(el("p", "Choose the latest inventory from a worker, or scan a repository at an exact commit.", "muted"));
+    const { main } = heading("Add software", "Choose an installer, review its source, then test a build before scheduling or promotion.");
+    main.append(el("p", "1. Choose software → 2. Review source and settings → 3. Build → 4. Inspect artifact → 5. Promote", "workflow-steps"));
+    const sourcePanel = section(main, "Recipe sources");
+    sourcePanel.append(el("p", "Use a worker’s existing AutoPkg inventory, or inspect a repository without running its recipes.", "muted"));
     const setup = el("details");
-    setup.append(el("summary", "Set up worker discovery"), el("p", "Start the worker with --discover-autopkg to publish its local inventory every five minutes. Run it as the AutoPkg account, or select a local --autopkg-prefs file. Discovery never updates repositories or runs recipes.", "muted"));
+    setup.append(el("summary", "Connect an existing AutoPkg inventory"), el("p", "Start the worker with --discover-autopkg. It publishes its inventory every five minutes. Run it as the AutoPkg account, or select a worker-local --autopkg-prefs file. Discovery does not update repositories or run recipes.", "muted"));
     sourcePanel.append(setup);
     const repo = el("details");
-    repo.append(el("summary", "Import from a repository URL"));
+    repo.append(el("summary", "Scan a recipe repository"));
     const repoForm = el("form");
     const url = field(repoForm, "Repository HTTPS URL", "url"); url.required = true;
-    const revision = field(repoForm, "Exact Git commit (40 lowercase hex characters)"); revision.required = true; revision.pattern = "[a-f0-9]{40}";
+    const revision = field(repoForm, "Pinned Git commit"); revision.required = true; revision.pattern = "[a-f0-9]{40}";
+    const starter = button("Use reviewed starter recipes", () => {
+      repo.open = true; url.value = starterSource.locator; revision.value = starterSource.revision;
+    }, "button secondary");
+    sourcePanel.append(starter);
+    repoForm.append(el("p", "The starter source includes reviewed Firefox and Thunderbird package recipes and the VLC disk image recipe. Review the exact source below; scanning does not accept trust or build software.", "muted"));
+    const scanStatus = el("div"); scanStatus.setAttribute("role", "status");
+    let scanGeneration = 0;
     submitForm(repoForm, "Scan repository", async () => {
+      const generation = ++scanGeneration;
       const scan = decodeResource(await api("create_recipe_catalog_scan", { idempotency_key: crypto.randomUUID(), body: { producer: "autopkg", source: { locator: url.value, revision: revision.value } } }));
-      const status = el("p", "Scan queued. An available AutoPkg worker will inspect this exact revision.", "callout");
-      const check = button("Check scan", async () => {
-        const result = decodeResource(await api("get_recipe_catalog_scan", { parameters: { scan: scan.id } }));
-        if (!ui.current(token)) return;
-        if (result.snapshot_id) await discovery();
-        else status.textContent = result.state === "failed" ? "Scan failed. Check worker availability and repository access in Recipes → Recipe catalog scans." : "Scan status: " + label(result.state) + ". Check again when the worker has finished.";
-      }, "button secondary");
-      repo.append(status, check);
+      if (!ui.current(token) || generation !== scanGeneration) return;
+      const status = el("p", "Scan queued. Waiting for an AutoPkg worker…", "callout");
+      scanStatus.replaceChildren(status);
+      let checks = 0;
+      async function poll() {
+        if (!ui.current(token) || generation !== scanGeneration) return;
+        try {
+          const result = decodeResource(await api("get_recipe_catalog_scan", { parameters: { scan: scan.id } }));
+          if (!ui.current(token) || generation !== scanGeneration) return;
+          if (result.snapshot_id) { await discovery(); return; }
+          if (["failed", "cancelled"].includes(result.state)) {
+            status.textContent = "Scan " + result.state + ". Review worker availability and repository access in Recipes → Recipe catalog scans."; return;
+          }
+          status.textContent = "Scan " + label(result.state).toLowerCase() + ". This page updates automatically.";
+          if (++checks < 300) setTimeout(poll, 2000);
+          else { status.textContent = "The scan is still pending. Automatic checks paused."; scanStatus.append(button("Check again", () => { checks = 0; poll(); })); }
+        } catch (error) {
+          if (!ui.current(token) || generation !== scanGeneration) return;
+          status.textContent = "Could not check the scan. " + error.message;
+          scanStatus.append(button("Retry scan status", poll));
+        }
+      }
+      await poll();
     });
-    repo.append(repoForm); sourcePanel.append(repo);
-    const snapshots = (await collection("list_recipe_catalog_snapshots")).filter(item => item.producer === "autopkg");
-    const workers = await collection("list_workers");
+    repo.append(repoForm, scanStatus); sourcePanel.append(repo);
+    const [allSnapshots, workers] = await Promise.all([collection("list_recipe_catalog_snapshots"), collection("list_workers")]);
     if (!ui.current(token)) return;
+    const snapshots = allSnapshots.filter(item => item.producer === "autopkg");
     const names = new Map(workers.map(worker => [worker.id, worker.name || worker.id]));
-    // The newest observation per worker/source is the default; older observations remain available through catalog history.
+    const capable = workers.filter(worker => worker.advertised_capabilities?.includes("builder.autopkg") && worker.allowed_capabilities?.includes("builder.autopkg"));
+    const workerStatus = el("div", null, "worker-summary");
+    if (!capable.length) workerStatus.append(el("p", "No AutoPkg-capable workers are registered. Connect a macOS worker before scanning or building.", "callout warning"));
+    for (const worker of capable) workerStatus.append(el("p", `${worker.name || worker.id} · ${worker.enabled ? "Enabled" : "Disabled"} · Last seen ${worker.last_seen_at ? formatTime(worker.last_seen_at) : "never"}`, "small muted"));
+    sourcePanel.append(workerStatus);
     snapshots.sort((a, b) => b.observed_at.localeCompare(a.observed_at));
     const latest = snapshots.filter((item, i, all) => all.findIndex(other => other.worker_id === item.worker_id && other.source.locator === item.source.locator) === i);
     if (!latest.length) {
-      sourcePanel.append(el("p", "No AutoPkg inventories yet. Enable discovery on a worker, or scan a pinned repository above.", "callout"));
+      repo.open = true;
+      sourcePanel.append(el("p", "No recipe inventory has been received. Use the reviewed starter recipes above, or connect an existing inventory.", "callout"));
       return;
     }
-    const sourceLabel = el("label", "Worker or repository snapshot", "field");
-    const source = el("select"); source.setAttribute("aria-label", "Worker or repository snapshot");
+    const sourceLabel = el("label", "Available inventories", "field");
+    const source = el("select"); source.setAttribute("aria-label", "Available inventories");
     sourceLabel.append(source); sourcePanel.append(sourceLabel);
     for (const item of latest) {
       const title = (item.source.locator.startsWith("stabbur-worker:") ? "Worker inventory" : item.source.locator) + " · " + names.get(item.worker_id) + " · " + formatTime(item.observed_at);
       const option = el("option", title); option.value = item.id; source.append(option);
     }
-    const inventory = section(main, "Select recipes");
+    const inventory = section(main, "Choose software and installer");
     let selectionGeneration = 0;
     async function load() {
       const selectedGeneration = ++selectionGeneration;
       const snapshotId = source.value;
-      inventory.replaceChildren(el("h2", "Select recipes"), el("p", "Loading inventory…", "muted"));
+      inventory.replaceChildren(el("h2", "Choose software and installer"), el("p", "Loading inventory…", "muted"));
       const snapshot = decodeRecipeSnapshot(await api("get_recipe_catalog_snapshot", { parameters: { snapshot: snapshotId } }));
       if (!ui.current(token) || selectedGeneration !== selectionGeneration) return;
-      const manifest = object(snapshot.manifest);
-      if (!Array.isArray(manifest.recipes) || !Array.isArray(manifest.diagnostics)) throw new Error("Unexpected recipe inventory.");
-      inventory.replaceChildren(el("h2", "Select recipes"));
-      const search = field(inventory, "Filter recipe identifiers", "search");
+      const manifest = snapshot.manifest;
+      const options = manifest.recipes.map(entry => recipeChoice(entry, manifest));
+      inventory.replaceChildren(el("h2", "Choose software and installer"));
+      if (options.some(choice => !choice.entry.guidance)) inventory.append(el("p", "This inventory contains older entries without recipe guidance. Scan the source again with an updated worker before importing them.", "callout warning"));
+      const search = field(inventory, "Search software or recipe", "search");
+      const filters = el("div", null, "toolbar"); filters.setAttribute("aria-label", "Recipe filters");
       const entries = el("div");
       const selected = new Map();
       const form = el("form", null, "import-form");
       const choices = el("div", null, "import-names");
-      const outputs = el("div", null, "import-fields");
-      const architectureLabel = el("label", "Artifact architecture", "field");
-      const architecture = el("select"); architecture.required = true; architecture.setAttribute("aria-label", "Artifact architecture");
-      for (const [value, title] of [["", "Choose the architecture produced by these recipes"], ["aarch64", "Apple silicon (arm64)"], ["x86_64", "Intel (x86_64)"], ["universal", "Universal"]]) {
-        const option = el("option", title); option.value = value; architecture.append(option);
-      }
-      architectureLabel.append(architecture); outputs.append(architectureLabel);
-      const minimum = field(outputs, "Minimum macOS (optional)");
-      const version = field(outputs, "Version output variable", "text", "version"); version.required = true;
-      const artifact = field(outputs, "Installer output variable", "text", "pathname"); artifact.required = true;
-      outputs.append(el("p", "Use pathname for a downloaded installer or pkg_path for a generated package. Confirm these variables and the architecture from the recipe before building.", "muted"));
-      const media = field(outputs, "Installer media type", "text", "application/octet-stream"); media.required = true;
-      form.append(choices, el("h3", "Build output"), outputs);
-      const review = submitForm(form, "Review import plan", async () => {
-        if (!selected.size) throw new Error("Select at least one importable recipe.");
-        const selections = [...selected].map(([identifier, inputs]) => ({ identifier, slug: inputs.slug.value, name: inputs.name.value, architecture: architecture.value, minimum_macos: minimum.value || null, version_variable: version.value, artifact_variable: artifact.value, media_type: media.value }));
+      form.append(el("h3", "Review selected installers"), el("p", "Each installer has separate output settings. Imported targets are manual and disabled; review and enable a target to run its first build.", "muted"), choices);
+      const review = submitForm(form, "Review sources and import plan", async () => {
+        if (!selected.size) throw new Error("Select at least one artifact recipe.");
+        const selections = [...selected].map(([identifier, inputs]) => ({ identifier, slug: inputs.slug.value, name: inputs.name.value, architecture: inputs.architecture.value, minimum_macos: inputs.minimum.value || null, version_variable: inputs.version.value, artifact_variable: inputs.artifact.value, media_type: inputs.media.value }));
+        if (new Set(selections.map(selection => selection.slug)).size !== selections.length) throw new Error("Choose one installer per software, or give each selected installer a unique software slug.");
         const desired = object(await request("/api/recipe-import", { snapshot: snapshotId, selections }));
-        if (ui.current(token) && selectedGeneration === selectionGeneration) await catalog(desired);
+        for(const selection of selections) {
+          const preset=options.find(choice=>choice.entry.identifier===selection.identifier)?.preset;
+          const software=desired.software.find(item=>item.slug===selection.slug);
+          if(preset&&software)software.installation={install:{stabbur_munki:preset},detection:{}};
+        }
+        if (ui.current(token) && selectedGeneration === selectionGeneration) await reviewCatalog(desired);
       });
       review.disabled = true;
-      inventory.append(entries, form);
+      inventory.append(filters, entries, form);
       let page = 0;
+      let view = options.some(choice => choice.recommended) ? "recommended" : options.some(choice => choice.artifact) ? "artifacts" : "setup";
+      const filterButtons = new Map();
+      for (const [value, title] of [["recommended", "Recommended"], ["artifacts", "Artifact recipes"], ["setup", "Needs setup"], ["all", "All discovered"]]) {
+        const control = button(title, () => { view = value; page = 0; render(); }, "button secondary");
+        filterButtons.set(value, control); filters.append(control);
+      }
+      function addSelection(choice) {
+        const row = el("fieldset", null, "import-names-row"); row.append(el("legend", choice.name + " — " + choice.title));
+        const slug = field(row, "Software slug", "text", choice.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")); slug.required = true;
+        const name = field(row, "Software name", "text", choice.name); name.required = true;
+        const architectureLabel = el("label", "Installer architecture", "field");
+        const architecture = el("select"); architecture.required = true; architecture.setAttribute("aria-label", "Installer architecture for " + choice.name);
+        for (const [value, title] of [["", "Confirm the installer’s architecture"], ["aarch64", "Apple silicon (arm64)"], ["x86_64", "Intel (x86_64)"], ["universal", "Universal"]]) {
+          const option = el("option", title); option.value = value; architecture.append(option);
+        }
+        architectureLabel.append(architecture); row.append(architectureLabel);
+        row.append(el("p", "Choose the architecture contained in the installer. It may differ from the worker’s architecture.", "small muted"));
+        const minimum = field(row, "Minimum macOS (optional)");
+        const outputs = el("details"); outputs.open = !choice.outputs; outputs.append(el("summary", "Advanced output settings"));
+        const version = field(outputs, "Version output variable", "text", choice.outputs?.version || ""); version.required = true;
+        const artifact = field(outputs, "Installer output variable", "text", choice.outputs?.artifact || ""); artifact.required = true;
+        const media = field(outputs, "Installer media type", "text", choice.outputs?.media || "application/octet-stream"); media.required = true;
+        outputs.append(el("p", choice.outputs ? "Suggested for this exact source revision; a successful test build is still required." : "Confirm the recipe’s actual outputs. Downloads often use pathname; generated packages often use pkg_path. Version variables vary by recipe.", "muted"));
+        for (const input of [version, artifact, media]) input.addEventListener("invalid", () => { outputs.open = true; });
+        row.append(outputs); choices.append(row);
+        selected.set(choice.entry.identifier, { row, slug, name, architecture, minimum, version, artifact, media });
+      }
       function render() {
         entries.replaceChildren();
-        const filtered = manifest.recipes.filter(entry => typeof entry.identifier === "string" && entry.identifier.toLowerCase().includes(search.value.toLowerCase()));
-        const count = el("p", filtered.length + " recipes · " + selected.size + " selected", "muted");
-        entries.append(count);
-        for (const entry of filtered.slice(page * 50, (page + 1) * 50)) {
-          const card = el("article", null, "plan-change");
-          const diagnostics = manifest.diagnostics.filter(item => !item.identifier || item.identifier === entry.identifier);
-          const ready = Array.isArray(entry.import_sources) && entry.import_sources.length && !diagnostics.some(item => item.severity === "error");
+        for (const [key, control] of filterButtons) control.setAttribute("aria-pressed", String(view === key));
+        const filtered = filterRecipeChoices(options, view, search.value);
+        const count = el("p", filtered.length + (filtered.length === 1 ? " recipe · " : " recipes · ") + selected.size + " selected", "muted"); entries.append(count);
+        if (!filtered.length) entries.append(el("p", view === "recommended" ? "No reviewed starter preset matches this snapshot. Browse Artifact recipes, or scan the reviewed starter source." : "No recipes match this filter.", "callout"));
+        let previousName;
+        for (const choice of filtered.slice(page * 50, (page + 1) * 50)) {
+          if (choice.name !== previousName) { entries.append(el("h3", choice.name)); previousName = choice.name; }
+          const entry = choice.entry;
+          const card = el("article", null, "plan-change recipe-choice");
           const labelNode = el("label", null, "confirm");
-          const check = el("input"); check.type = "checkbox"; check.checked = selected.has(entry.identifier); check.disabled = !ready;
-          labelNode.append(check, document.createTextNode(" " + entry.identifier)); card.append(labelNode);
-          if (!ready && !diagnostics.some(item => item.severity === "error")) card.append(el("p", "Refresh discovery with an updated worker to obtain complete source pins.", "muted"));
-          for (const diagnostic of diagnostics) card.append(el("p", diagnostic.detail, "callout " + (diagnostic.severity === "error" ? "error" : "warning")));
-          const pins = el("details"); pins.append(el("summary", "Parents and exact sources"));
-          properties(pins, { Parents: Array.isArray(entry.parents) && entry.parents.length ? entry.parents.join(", ") : "None" });
+          const check = el("input"); check.type = "checkbox"; check.setAttribute("aria-label", "Select " + entry.identifier); check.checked = selected.has(entry.identifier); check.disabled = !choice.selectable;
+          labelNode.append(check, document.createTextNode(" " + choice.title)); card.append(labelNode, el("span", choice.status, "badge"), el("p", choice.reason, "muted"));
+          for (const diagnostic of choice.diagnostics) card.append(el("p", diagnostic.detail, "callout " + (diagnostic.severity === "error" ? "error" : "warning")));
+          const pins = el("details"); pins.append(el("summary", "Recipe, parents and exact sources"));
+          properties(pins, { Recipe: entry.identifier, Parents: entry.parents.length ? entry.parents.join(", ") : "None" });
           for (const pin of entry.import_sources || []) properties(pins, { Repository: pin.locator, Commit: pin.revision });
-          card.append(pins);
+          pins.append(el("p", "Purpose describes known processors in the parent chain. Review all source code; this classification is not execution verification.", "small muted")); card.append(pins);
           check.addEventListener("change", () => {
             if (check.checked) {
               if (selected.size >= 100) { check.checked = false; showError(new Error("Import at most 100 recipes at a time.")); return; }
-              const row = el("fieldset", null, "import-names-row"); row.append(el("legend", entry.identifier));
-              const suggested = entry.identifier.split(".").pop().toLowerCase().replace(/[^a-z0-9-]/g, "-");
-              const slug = field(row, "Software slug", "text", suggested); slug.required = true;
-              const name = field(row, "Software name", "text", entry.identifier.split(".").pop()); name.required = true;
-              choices.append(row); selected.set(entry.identifier, { row, slug, name });
+              addSelection(choice);
             } else { selected.get(entry.identifier)?.row.remove(); selected.delete(entry.identifier); }
             review.disabled = !selected.size;
-            count.textContent = filtered.length + " recipes · " + selected.size + " selected";
-          });
-          entries.append(card);
+            count.textContent = filtered.length + (filtered.length === 1 ? " recipe · " : " recipes · ") + selected.size + " selected";
+          }); entries.append(card);
         }
         const controls = el("div", null, "actions");
         const previous = button("Previous recipes", () => { page--; render(); }, "button secondary"); previous.disabled = page === 0;
@@ -1280,6 +1367,8 @@ export function createWorkflows(ui) {
       applyForm.hidden = true;
       confirmed.checked = false;
       showResult("Catalog applied", result);
+      for(const software of manifest.software)panel.append(link("Continue with "+software.name,"software",software.slug,"button primary"));
+      panel.append(el("p", "Next: review and enable the imported manual target, build once, then inspect its artifact before promotion or scheduling.", "callout"), link("Review build targets", "targets", undefined, "button primary"));
     });
     apply.disabled = true;
     applyForm.hidden = true;
@@ -1356,12 +1445,18 @@ export function createWorkflows(ui) {
               );
               const pinDiff = el("div", null, "pin-diff");
               pinDiff.append(el("h4", "Source pins and build definition"));
+              const definition = action.revision.definition;
               properties(pinDiff, {
-                Current: before
-                  ? JSON.stringify(before.definition, null, 2)
-                  : "No previous revision",
-                Proposed: JSON.stringify(action.revision.definition, null, 2),
+                "Current recipe": before?.definition?.entrypoint || "No previous revision",
+                "Proposed recipe": definition.entrypoint || action.revision.builder,
+                "Version output": definition.output?.version_pointer?.replace("/stabbur/outputs/", "") || "See exact change",
               });
+              for (const variant of definition.output?.variants || []) properties(pinDiff, {
+                "Installer architecture": label(variant.architecture),
+                "Minimum macOS": variant.minimum_macos || "Not specified",
+                "Installer output": variant.artifacts.map(artifact => artifact.path_pointer.replace("/stabbur/outputs/", "")).join(", "),
+              });
+              for (const pin of definition.sources || []) properties(pinDiff, { Repository: pin.url, "Exact commit": pin.commit });
               card.append(pinDiff);
             }
             const details = el("details");
