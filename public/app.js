@@ -422,7 +422,7 @@ async function loadGroup(group) {
     "search",
     parseRoute(location.hash).search,
   );
-  const statusField = element("div", null, "field");
+  const statusField = element("div", null, "field status-filter");
   const status = element("select");
   status.setAttribute("aria-label", "Status");
   status.append(new Option("All statuses", ""));
