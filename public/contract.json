@@ -1,5 +1,5 @@
 {
-  "contract_sha256": "9762775ff1eea893f23a8d2bb9506a7ac1a1cab1758d503aefde95e953f4af37",
+  "contract_sha256": "be75cdf3e7951468916951d39441bb007d9dcb420221c606879f9fb8d378b61b",
   "excluded": {
     "apply_export": "Dedicated typed long-running batch publication endpoint.",
     "bootstrap": "Bootstrap remains a local server administration operation.",
@@ -619,29 +619,23 @@
           }
         },
         {
-          "in": "path",
+          "in": "query",
           "name": "after",
-          "required": true,
+          "required": false,
           "schema": {
             "format": "int64",
             "minimum": 0,
-            "type": [
-              "integer",
-              "null"
-            ]
+            "type": "integer"
           }
         },
         {
-          "in": "path",
+          "in": "query",
           "name": "limit",
-          "required": true,
+          "required": false,
           "schema": {
             "format": "int32",
             "minimum": 0,
-            "type": [
-              "integer",
-              "null"
-            ]
+            "type": "integer"
           }
         }
       ],
@@ -772,6 +766,66 @@
       "path": "jobs/{job}",
       "summary": "get job",
       "tag": "jobs"
+    },
+    {
+      "body": null,
+      "body_required": false,
+      "credential_download": false,
+      "id": "software_library",
+      "method": "get",
+      "parameters": [
+        {
+          "description": "Literal name/slug substring; ASCII case-insensitive, at most 200 UTF-8 bytes.",
+          "in": "query",
+          "name": "q",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "description": "all (default), attention, failed, blocked, review, or not_built.",
+          "in": "query",
+          "name": "view",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "description": "name (default, code-point order) or newest (creation identity descending). Never version order.",
+          "in": "query",
+          "name": "sort",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "description": "Opaque keyset cursor bound to the search, view, and sort.",
+          "in": "query",
+          "name": "cursor",
+          "required": false,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "description": "Page size, default 50, maximum 200.",
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "format": "int32",
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "library/software",
+      "summary": "software library",
+      "tag": "software"
     },
     {
       "body": null,
@@ -2307,6 +2361,49 @@
         }
       ]
     },
+    "CapabilityQueueResponse": {
+      "description": "Jobs grouped by exact capabilities, separating unavailable workers from active leases.",
+      "properties": {
+        "matching_workers": {
+          "description": "Recent enabled non-draining compatible workers.",
+          "format": "int64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "oldest_queued_at": {
+          "description": "Oldest job in this group.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "queued_jobs": {
+          "description": "Queued jobs.",
+          "format": "int64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "required_capabilities": {
+          "description": "Complete requirements matched on one worker.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "workers_with_active_leases": {
+          "description": "Compatible workers holding an unexpired lease; this is not configured capacity.",
+          "format": "int64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "required_capabilities",
+        "queued_jobs",
+        "matching_workers",
+        "workers_with_active_leases",
+        "oldest_queued_at"
+      ],
+      "type": "object"
+    },
     "ChangePasswordRequest": {
       "description": "Self-service password change request.",
       "properties": {
@@ -3324,6 +3421,131 @@
       ],
       "type": "object"
     },
+    "LibraryEntryResponse": {
+      "description": "Library summary with separate execution, approval, and publication observations.",
+      "properties": {
+        "blocked_targets": {
+          "description": "Enabled targets without a recent compatible worker.",
+          "format": "int64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "channels": {
+          "description": "Current channel selections, not evidence of installation on a device.",
+          "items": {
+            "$ref": "#/components/schemas/SoftwareChannelStatusResponse"
+          },
+          "type": "array"
+        },
+        "created_at": {
+          "description": "Software creation time.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "id": {
+          "description": "Software identity.",
+          "type": "string"
+        },
+        "last_success_at": {
+          "description": "Most recent successful check.",
+          "format": "date-time",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "latest_run_id": {
+          "description": "Latest run identity.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "latest_run_state": {
+          "description": "Latest run state; historical failures do not overwrite later success.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Display name.",
+          "type": "string"
+        },
+        "next_run_at": {
+          "description": "Next enabled recurring check.",
+          "format": "date-time",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "outstanding_runs": {
+          "description": "Queued or running builds.",
+          "format": "int64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "review_count": {
+          "description": "Available candidate releases awaiting review.",
+          "format": "int64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "review_release_id": {
+          "description": "Most recently created available candidate.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "revision": {
+          "description": "Software concurrency revision.",
+          "format": "int64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "slug": {
+          "description": "Stable software slug.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "slug",
+        "name",
+        "revision",
+        "created_at",
+        "channels",
+        "outstanding_runs",
+        "blocked_targets",
+        "review_count"
+      ],
+      "type": "object"
+    },
+    "LibraryPageResponse": {
+      "description": "A bounded library page. No false next-page cursor when the collection is exhausted.",
+      "properties": {
+        "items": {
+          "description": "Current summary rows.",
+          "items": {
+            "$ref": "#/components/schemas/LibraryEntryResponse"
+          },
+          "type": "array"
+        },
+        "next_cursor": {
+          "description": "Continuation for the same query; null at exhaustion.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
     "LivenessResponse": {
       "description": "Liveness response.",
       "properties": {
@@ -3382,6 +3604,17 @@
     "OperationalStatusResponse": {
       "description": "Durable queue and worker measurements; contains no backend paths or credentials.",
       "properties": {
+        "capability_queues": {
+          "description": "First 200 queued capability groups ordered by oldest work.",
+          "items": {
+            "$ref": "#/components/schemas/CapabilityQueueResponse"
+          },
+          "type": "array"
+        },
+        "capability_queues_truncated": {
+          "description": "Further groups exist outside this bounded response.",
+          "type": "boolean"
+        },
         "draining_workers": {
           "description": "Enabled workers paused for maintenance.",
           "format": "int64",
@@ -3422,6 +3655,8 @@
         }
       },
       "required": [
+        "capability_queues",
+        "capability_queues_truncated",
         "queued_jobs",
         "running_jobs",
         "failed_jobs",

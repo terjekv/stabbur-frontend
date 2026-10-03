@@ -58,7 +58,8 @@ and binary uploads. Log views use bounded pages. The CLI also supports live reco
 
 Software, build targets, runs and releases have shareable fragment URLs with working Back and
 Refresh navigation. Software views show current channels, recent build status, next checks and
-worker blockers. Search and status filters apply to loaded items; Load more extends the set.
+worker blockers. Library and Needs attention search/filter the whole catalog before pagination. Advanced resource
+lists still filter loaded items; Load more extends those views.
 
 Build forms use named software and recipe selectors with explicit immutable revision selection.
 Schedules have manual and recurring controls; new console targets default to disabled. Enabling a
@@ -84,7 +85,7 @@ OpenAPI document and the gateway; use `--update` only after reviewing contract c
 The server's `scripts/check-workspace-integration.py` exercises all four sibling repositories with
 a disposable local server and tests login, roles, origin/CSRF rejection, logout and revocation.
 
-This console targets the coordinated 0.0.1 release contract, 75 public operations in the released image; this development branch pins 86. Local
+This console targets the coordinated 0.0.1 release contract, 75 public operations in the released image; this development branch pins 87. Local
 integration is development evidence; released compatibility requires the same immutable-image
 acceptance evidence as the supported client and CLI. No server image is published by these scripts.
 
@@ -180,3 +181,30 @@ allow enough free disk space for the complete repository and uncompressed archiv
 The earlier delivery feature documented above remains available under **Exports → Earlier Munki
 publications**, with unchanged URLs and local storage. It is not automatically migrated. New saved
 exports need no `STABBUR_FRONTEND_DATA_DIR`; their durable state is in the server database.
+
+
+## Library and attention (development server)
+
+The primary navigation is Library, Needs attention, Exports, and Activity. Build targets, recipes,
+workers, storage, and access remain available under Administration. Library pages use one summary
+request instead of a status request for every row. Search applies before cursor pagination;
+filters and ordering survive refresh and can be bookmarked or shared. Press `/` to focus search.
+Columns can be toggled for the current view; these preferences are not stored in the browser.
+
+Attention shows current failed checks, missing compatible workers, and available candidate
+releases. Running replacement work suppresses the failed-check predicate. Worker queues are grouped
+by complete capability requirements. Active leases are observations, not configured capacity.
+
+Select applications across pages and queries, then create an export. Explicit selections remain
+bounded to 100 applications and are cleared on logout. Export pickers, release pickers, export lists,
+and publication history fetch bounded pages. Full software metadata is loaded only for selected
+applications. The Selected applications view lets operators inspect their complete selection.
+
+History comparison shows changes in exact releases, bytes, architecture/macOS compatibility, and
+installation settings. Restoring prepares a draft with exact release pins while keeping the current
+destination and catalog. Review and publish separately; the server rechecks eligibility and revisions.
+No action implies a device has installed, validated, or downgraded an application.
+
+These additions require the coordinated development contract and do not change released-image
+compatibility claims. Notifications, ownership/scoped permissions, shared sessions, object storage,
+and retention are governed by the server's `docs/architecture/operator-scale.md` follow-on criteria.

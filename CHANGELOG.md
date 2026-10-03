@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Make Library, Needs attention, Exports, and Activity the primary navigation, with administration
+  grouped separately. Search and filter all applications before pagination through the new server
+  summary API; share views by URL, select columns, and select explicit applications across pages.
+- Show capability-group worker queues and direct review/failure actions. Bound export application,
+  release, and publication-history pickers; compare previous snapshots and restore exact selections
+  as a draft under the current revision, with preview and publication remaining separate.
+- Pin the coordinated development client and correct export-history query parameter metadata.
+
 - Add an Exports workspace with bulk software selection, channel following or exact pins, reusable installation settings, complete batch review, verified repository archives and device setup. Definitions and publication history live in the server. Earlier delivery repositories remain available under Exports.
 
 ## [0.0.1] - 2026-09-26

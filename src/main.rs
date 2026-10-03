@@ -377,6 +377,10 @@ async fn asset(path: web::Path<String>) -> HttpResponse {
             "text/javascript; charset=utf-8",
             include_str!("../public/recipe-model.js"),
         ),
+        "library.js" => (
+            "text/javascript; charset=utf-8",
+            include_str!("../public/library.js"),
+        ),
         "exports.js" => (
             "text/javascript; charset=utf-8",
             include_str!("../public/exports.js"),

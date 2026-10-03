@@ -876,3 +876,18 @@ h1 {
 .export-selection-controls .field {flex:1;min-width:12rem;}
 .export-selection-controls[hidden],.export-selection[hidden] {display:none;}
 .export-selection-count {font-weight:600;}
+
+/* Collection work remains compact and keyboard accessible. */
+.sidebar { overflow-y: auto; }
+.brand { margin-bottom: 24px; }
+.nav-section { margin: 26px 0 10px; }
+.library-table { overflow-x: auto; padding: 0; }
+.library-table table { width: 100%; }
+.library-table th { position: sticky; top: 0; background: #eef2ec; white-space: nowrap; }
+.library-table td small { display: block; margin-top: 5px; }
+.library-table input[type=checkbox] { width: 18px; height: 18px; }
+.library-table .button { white-space: nowrap; }
+.status-text { margin: 3px 0; font-size: 13px; }
+.export-picker-controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+
+.library-table a:not(.button) { color: var(--green, #205747); font-weight: 600; text-decoration-thickness: 1px; text-underline-offset: 3px; }

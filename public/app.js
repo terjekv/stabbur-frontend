@@ -12,6 +12,7 @@ import {
   decodeProblem,
   matchesFilter,
 } from "./model.js";
+import { createLibrary } from "./library.js";
 import { createExports } from "./exports.js";
 import { createDelivery } from "./delivery.js";
 import { createWorkflows } from "./workflows.js";
@@ -115,6 +116,7 @@ function announce(text) {
   feedback(text);
 }
 function expire() {
+  exports.clearSelection();
   pendingCatalogImport = null;
   session = null;
   clearTimeout(expiryTimer);
@@ -258,7 +260,8 @@ function renderShell() {
   sidebar.append(brand, element("p", "MANAGEMENT", "eyebrow"));
   const nav = element("nav");
   nav.setAttribute("aria-label", "Management");
-  for (const group of [groups[0], { id: "discovery", title: "Add software from recipes" }, {id:"exports",title:"Exports"}, ...groups.slice(1), { id: "catalog", title: "Catalog plans" }]) {
+  for (const group of [{ id:"software", title:"Library" }, {id:"attention",title:"Needs attention"}, {id:"exports",title:"Exports"}, {...groups.find(g=>g.id==="runs"),title:"Activity"}, ...groups.filter(g=>!["software","runs"].includes(g.id)), {id:"catalog",title:"Catalog plans"}]) {
+    if (group.id === "targets") nav.append(element("p", "ADMINISTRATION", "eyebrow nav-section"));
     const item = element("a", group.title, "nav-item");
     item.href = routeHash(group.id);
     item.dataset.group = group.id;
@@ -318,6 +321,8 @@ async function renderRoute() {
     pendingCatalogImport = null;
     if (route.group === "discovery") return await workflows.discovery();
     if (route.group === "exports") return await exports.page(route.id);
+    if (route.group === "attention") return await library.page(true);
+    if (route.group === "software" && !route.id) return await library.page();
     if (route.group === "delivery") return await delivery.page(route.id);
     if (
       route.id &&
@@ -1107,6 +1112,7 @@ const workflowUI = {
 const workflows = createWorkflows(workflowUI);
 const delivery = createDelivery(workflowUI);
 const exports = createExports(workflowUI);
+const library = createLibrary({...workflowUI, exportSelection(rows) { exports.select(rows); return navigate("exports", "new"); }});
 window.addEventListener("hashchange", () => {
   renderRoute().catch(showError);
 });

@@ -1,3 +1,4 @@
+import { decodeLibrary } from "./library.js";
 import { object, routeHash, formatTime } from "./model.js";
 const actions = new Set(["add", "update", "unchanged", "remove", "blocked"]);
 export function decodeExport(value) {
@@ -38,23 +39,41 @@ export function createExports(ui) {
   const select=(parent,label,choices,value)=>{const wrap=el("label",label,"field"),input=el("select");input.setAttribute("aria-label",label);for(const [key,text]of choices){const option=el("option",text);option.value=key;input.append(option);}input.value=value;wrap.append(input);parent.append(wrap);return input;};
   function confirmation(parent,text){const label=el("label",null,"confirmation"),check=el("input");check.type="checkbox";check.required=true;label.append(check,document.createTextNode(text));parent.append(label);return check;}
   function submit(form,text,action){const b=el("button",text,"button primary");b.type="submit";form.append(b);form.addEventListener("submit",async e=>{e.preventDefault();if(!form.reportValidity())return;b.disabled=true;try{await action();}catch(error){showError(error);}finally{b.disabled=false;}});return b;}
-  async function collection(operation,parameters={}){const result=[],seen=new Set();let cursor;do{const page=object(await api(operation,{parameters,query:{limit:"200",...(cursor?{cursor}:{})}}));if(!Array.isArray(page.items))throw new Error("Unexpected list response");result.push(...page.items);cursor=page.next_cursor;if(cursor&&(seen.has(cursor)||seen.size>=100))throw new Error("List pagination did not finish");seen.add(cursor);}while(cursor);return result;}
+
+  let pendingSelection=[];
   async function page(id){
     const token=ui.begin();
     if(id)return editor(id,token);
-    const {main,actions:headingActions}=heading("Exports","Choose software from your library, review a batch, then publish it to Munki or download repository files.");
-    const create=button("New export",()=>navigate("exports","new"),"button primary");(headingActions||main).append(create);
-    const records=(await collection("list_exports")).map(decodeExport);if(!ui.current(token))return;
-    if(!records.length){const empty=el("section",null,"panel resource-section");empty.append(el("h2","Build your library. Export what you need."),el("p","An export remembers which applications to include, which channels to follow, and how Munki detects installed versions. You review updates together before publishing."),link("Browse software","software"));main.append(empty);}
-    for(const record of records){const card=el("article",null,"panel resource-section");card.append(el("h2",record.definition.name),el("p",`${record.definition.selections.length} applications · ${record.definition.destination==="hosted"?"Hosted Munki repository":"Files for an existing repository"} · ${record.generation?`Published snapshot ${record.generation}`:"Draft"}`),button("Open export",()=>navigate("exports",record.id),"button primary"));main.append(card);}
-    const legacy=el("details",null,"advanced");legacy.append(el("summary","Earlier Munki publications"),el("p","Existing publications made with the earlier delivery screen remain available at their original addresses. New exports are managed here."),link("Open earlier delivery screen","delivery"));main.append(legacy);
+    const {main,head}=heading("Exports","Saved application selections and reviewed publication snapshots.");
+    head.append(button("New export",()=>navigate("exports","new"),"button primary"));
+    const list=el("section"), more=button("Load more exports",()=>load(),"button secondary");main.append(list,more);
+    let cursor=null,serial=0;
+    async function load(){const call=++serial;more.disabled=true;try{
+      const page=object(await api("list_exports",{query:{limit:"50",...(cursor?{cursor}:{})}}));
+      if(!ui.current(token)||call!==serial)return;
+      if(!Array.isArray(page.items))throw new Error("Unexpected exports page");
+      for(const value of page.items){const record=decodeExport(value),card=el("article",null,"panel resource-section");
+        card.append(el("h2",record.definition.name),el("p",`${record.definition.selections.length} applications · ${record.definition.destination==="hosted"?"Hosted Munki repository":"Repository files"} · ${record.generation?`Published snapshot ${record.generation}`:"Draft"}`),button("Open export",()=>navigate("exports",record.id),"button primary"));
+        const status=el("p","Check whether approved channels or the saved selection differ from publication.","muted");
+        const check=button("Check for changes",async()=>{check.disabled=true;try{const plan=decodeExportPlan(await api("plan_export",{parameters:{export:record.id}}));if(!ui.current(token))return;status.textContent=plan.changes.filter(c=>c.action!=="unchanged").map(c=>`${c.action}: ${c.name}`).join(" · ")||"No publication changes.";}finally{check.disabled=false;}},"button secondary");
+        card.append(status,check);list.append(card);
+      }
+      if(!list.children.length)list.append(el("p","No exports yet. Select applications in the library or create an export."));
+      if(page.next_cursor&&page.next_cursor===cursor)throw new Error("Export pagination did not advance");
+      cursor=page.next_cursor;more.hidden=!cursor;
+    }finally{more.disabled=false;}}
+    await load();
+    const legacy=el("details",null,"advanced");legacy.append(el("summary","Earlier Munki publications"),link("Open earlier delivery screen","delivery"));main.append(legacy);
   }
   async function editor(id,token){
     const fresh=id==="new";
     let record=fresh?null:decodeExport(await api("get_export",{parameters:{export:id}}));
-    const software=await collection("list_software");if(!ui.current(token))return;
+    const metadata=new Map();
+    if(!ui.current(token))return;
     const draft=record?structuredClone(record.definition):{name:"",slug:"",destination:"hosted",catalog:"testing",selections:[]};
     const selections=new Map(draft.selections.map(s=>[s.software,s]));
+    const initial=fresh?pendingSelection:[];pendingSelection=[];
+    for(const app of initial){metadata.set(app.id,app);selections.set(app.id,defaultSelection(app));}
     const {main}=heading(fresh?"New export":draft.name,"Save your software selection once. When builds are approved, preview the changes and publish the whole batch.");
     main.append(link("All exports","exports"));
     const form=el("form",null,"panel resource-section");main.append(form);
@@ -69,24 +88,73 @@ export function createExports(ui) {
     const search=field(form,"Find software","search","");search.placeholder="Search your library";
     const count=el("p",null,"export-selection-count");form.append(count);
     const list=el("div",null,"export-selection-list");form.append(list);
-    const cards=[];
-    const updateCount=()=>count.textContent=`${selections.size} of ${software.length} applications selected`;
-    for(const app of software){
+    search.maxLength=200;
+    const picker=el("div",null,"export-picker-controls"), mode=select(picker,"Show",[["search","Search results"],["selected","Selected applications"]],"search");
+    const more=button("Load more applications",()=>loadSoftware(true),"button secondary");picker.append(more);form.insertBefore(picker,list);
+    const updateCount=()=>count.textContent=`${selections.size} applications selected across searches and pages`;
+    let cursor=null,querySerial=0,timer;
+    function renderApp(app){
       const row=el("article",null,"export-selection"),top=el("div",null,"export-selection-heading"),label=el("label",null,"confirmation"),check=el("input");check.type="checkbox";check.checked=selections.has(app.id);label.append(check,document.createTextNode(app.name));top.append(label);row.append(top);list.append(row);
       const controls=el("div",null,"export-selection-controls");row.append(controls);
       function draw(){controls.replaceChildren();controls.hidden=!check.checked;if(!check.checked)return;const selection=selections.get(app.id);
         const choices=[["testing","Follow testing"],["stable","Follow stable"],["pin","Pin exact release"]];if(selection.source.kind==="channel"&&!choices.some(([v])=>v===selection.source.channel))choices.push([selection.source.channel,`Follow ${selection.source.channel}`]);
         const source=select(controls,`Version for ${app.name}`,choices,selection.source.kind==="release"?"pin":selection.source.channel);
         const releaseWrap=el("div");controls.append(releaseWrap);
-        async function pin(){releaseWrap.replaceChildren(el("p","Loading releases…","muted"));try{const releases=await collection("list_releases",{software:app.id});if(!releaseWrap.isConnected||source.value!=="pin")return;releaseWrap.replaceChildren();const approved=releases.filter(r=>["testing","stable"].includes(r.state)&&r.availability?.kind==="available");const initial=selection.source.kind==="release"?selection.source.release:"";const release=select(releaseWrap,`Pinned release for ${app.name}`,[["","Choose an approved release"],...approved.map(r=>[r.id,`${r.version} · ${r.state}`])],initial);release.required=true;release.addEventListener("change",()=>selection.source={kind:"release",release:release.value});}catch(error){showError(error);}}
+        async function pin(){
+          releaseWrap.replaceChildren(el("p","Loading releases…","muted"));
+          try{
+            const initial=selection.source.kind==="release"?selection.source.release:"";
+            releaseWrap.replaceChildren();const release=select(releaseWrap,`Pinned release for ${app.name}`,[["","Choose an approved release"]],"");release.required=true;
+            const seen=new Set();let cursor=null;
+            const add=value=>{if(!seen.has(value.id)&&["testing","stable"].includes(value.state)&&value.availability?.kind==="available"){seen.add(value.id);release.append(new Option(`${value.version} · ${value.state}`,value.id));}};
+            if(initial){const value=object(await api("get_release",{parameters:{release:initial}}));add(value);release.value=initial;if(!seen.has(initial))releaseWrap.append(el("p","The pinned release is no longer eligible. Choose another approved release.","callout warning"));}
+            const more=button("Load more releases",load,"button secondary");releaseWrap.append(more);
+            async function load(){more.disabled=true;try{
+              const page=object(await api("list_releases",{parameters:{software:app.id},query:{limit:"50",...(cursor?{cursor}:{})}}));
+              if(!releaseWrap.isConnected||source.value!=="pin")return;
+              if(!Array.isArray(page.items))throw new Error("Unexpected release page");page.items.forEach(add);
+              if(page.next_cursor&&page.next_cursor===cursor)throw new Error("Release pagination did not advance");cursor=page.next_cursor;more.hidden=!cursor;
+            }finally{more.disabled=false;}}
+            release.addEventListener("change",()=>selection.source={kind:"release",release:release.value});await load();
+          }catch(error){showError(error);}
+        }
         source.addEventListener("change",()=>{if(source.value==="pin"){selection.source={kind:"release",release:""};pin();}else{selection.source={kind:"channel",channel:source.value};releaseWrap.replaceChildren();}});if(source.value==="pin")pin();
         const arch=select(controls,`Macs for ${app.name}`,[["both","Apple silicon and Intel"],["aarch64","Apple silicon"],["x86_64","Intel"]],selection.architectures.length===1?selection.architectures[0]:"both");arch.addEventListener("change",()=>selection.architectures=arch.value==="both"?[]:[arch.value]);
         const settings=button(selection.settings?"Review installation settings":"Set installation settings",()=>settingsDialog(app,selection,draw),"button secondary");controls.append(settings);if(!selection.settings)controls.append(el("p","Save as a draft now; installation settings are required before publishing.","muted"));
       }
-      check.addEventListener("change",()=>{if(check.checked){if(selections.size>=100){check.checked=false;showError(new Error("An export supports up to 100 applications."));return;}selections.set(app.id,defaultSelection(app));}else selections.delete(app.id);draw();updateCount();});draw();cards.push({row,text:`${app.name} ${app.slug}`.toLowerCase()});
+      check.addEventListener("change",async()=>{try{if(check.checked){
+        if(selections.size>=100){check.checked=false;throw new Error("An export supports up to 100 applications.");}
+        selections.set(app.id,defaultSelection(app));draw();updateCount();check.disabled=true;
+        try{const full=object(await api("get_software",{parameters:{software:app.id}}));if(!ui.current(token))return;metadata.set(app.id,full);const selection=selections.get(app.id);if(selection&&!selection.settings)selection.settings=defaultSelection(full).settings;}finally{check.disabled=false;}
+      }else selections.delete(app.id);draw();updateCount();}catch(error){showError(error);}});draw();
     }
-    if(!software.length)list.append(el("p","Your software library is empty."),link("Add software from recipes","discovery"));
-    search.addEventListener("input",()=>cards.forEach(({row,text})=>row.hidden=!text.includes(search.value.toLowerCase())));updateCount();
+    async function loadSoftware(append=false){
+      const request=++querySerial;more.disabled=true;
+      if(!append){cursor=null;list.replaceChildren(el("p","Loading applications…","muted"));}
+      try{
+        if(mode.value==="selected"){
+          more.hidden=true;
+          const ids=[...selections.keys()];let index=0;
+          await Promise.all(Array.from({length:Math.min(4,ids.length)},async()=>{while(index<ids.length){const id=ids[index++];if(!metadata.has(id))metadata.set(id,object(await api("get_software",{parameters:{software:id}})));}}));
+          if(!ui.current(token)||request!==querySerial)return;
+          list.replaceChildren();for(const id of ids){const app=metadata.get(id);if(app&&`${app.name} ${app.slug}`.toLowerCase().includes(search.value.toLowerCase()))renderApp(app);}
+        }else{
+          const page=decodeLibrary(await api("software_library",{query:{q:search.value,view:"all",sort:"name",limit:"50",...(cursor?{cursor}:{})}}));
+          if(!ui.current(token)||request!==querySerial)return;
+          if(!append)list.replaceChildren();for(const app of page.items)renderApp(app);
+          if(page.nextCursor&&page.nextCursor===cursor)throw new Error("Application pagination did not advance");
+          cursor=page.nextCursor;more.hidden=!cursor;
+        }
+        if(!list.children.length)list.append(el("p","No applications match this view.","muted"));
+      }catch(error){if(ui.current(token)&&request===querySerial)showError(error);}finally{if(request===querySerial)more.disabled=false;}
+    }
+    function searchChanged(){++querySerial;clearTimeout(timer);timer=setTimeout(()=>loadSoftware(),200);}
+    search.addEventListener("input",searchChanged);mode.addEventListener("change",searchChanged);
+    ui.cleanup(()=>{++querySerial;clearTimeout(timer);});
+    // Only explicit selections receive detail reads; the library itself stays paginated.
+    for(const app of initial){const full=object(await api("get_software",{parameters:{software:app.id}}));if(!ui.current(token))return;metadata.set(app.id,full);selections.set(app.id,defaultSelection(full));}
+    updateCount();await loadSoftware();
+
     async function save(){if(!form.reportValidity())return null;const definition={name:name.value,slug:slug.value,destination:destination.value,catalog:catalog.value,selections:[...selections.values()]};if(record&&sameExportDefinition(definition,record.definition))return record;record=decodeExport(await api(record?"update_export":"create_export",{...(record?{parameters:{export:record.id},revision:record.revision}:{}),body:definition}));return record;}
     submit(form,"Save selection",async()=>{const saved=await save();if(saved)navigate("exports",saved.id);});
     form.append(button("Preview batch",async()=>{try{const saved=await save();if(saved)await preview(saved);}catch(error){showError(error);}},"button secondary"));
@@ -105,7 +173,16 @@ export function createExports(ui) {
         if(current.snapshot.definition.destination==="hosted")setup(published,record);
         main.insertBefore(published,form);
       }
-      const history=el("details",null,"advanced");history.append(el("summary","Publication history"));published.append(history);let loaded=false;history.addEventListener("toggle",async()=>{if(!history.open||loaded)return;try{let after="0";const seen=new Set();do{const page=object(await api("list_export_history",{parameters:{export:record.id},query:{after,limit:"200"}}));if(!Array.isArray(page.items))throw new Error("Unexpected export history");for(const snapshot of page.items)history.append(el("p",`Snapshot ${snapshot.generation} · ${snapshot.items.length} installers · ${formatTime(snapshot.created_at)}`));after=page.next_cursor;if(after&&seen.has(after))throw new Error("History pagination did not finish");seen.add(after);}while(after);loaded=true;}catch(error){showError(error);}});
+      const history=el("details",null,"advanced");history.append(el("summary","Publication history"));published.append(history);
+      let loaded=false,after="0",loading=false;
+      const moreHistory=button("Load more snapshots",loadHistory,"button secondary");history.append(moreHistory);
+      async function loadHistory(){if(loading)return;loading=true;moreHistory.disabled=true;try{
+        const page=object(await api("list_export_history",{parameters:{export:record.id},query:{after,limit:"20"}}));if(!ui.current(token))return;
+        if(!Array.isArray(page.items))throw new Error("Unexpected export history");
+        for(const snapshot of page.items){const row=el("article",null,"resource-section");row.append(el("p",`Snapshot ${snapshot.generation} · ${snapshot.items.length} installers · ${formatTime(snapshot.created_at)}`),button("Compare and restore selection",()=>reviewSnapshot(record,snapshot.generation),"button secondary"));history.insertBefore(row,moreHistory);}
+        if(page.next_cursor&&page.next_cursor===after)throw new Error("History pagination did not advance");after=page.next_cursor;moreHistory.hidden=!after;loaded=true;
+      }finally{loading=false;moreHistory.disabled=false;}}
+      history.addEventListener("toggle",()=>{if(history.open&&!loaded)loadHistory().catch(showError);});
     }
   }
   function settingsDialog(app,selection,refresh){
@@ -137,5 +214,44 @@ export function createExports(ui) {
     for(const [test,text] of[[false,"Download managed Mac profile"],[true,"Download disposable test Mac profile"]])details.append(button(text,()=>{const body=openDialog(text),form=el("form");body.append(form);form.append(el("p",test?"Use a disposable Mac with Munki installed. This profile requests installation of all applications in the published snapshot.":"This profile contains a repository-only credential. Distribute it to managed Macs with Munki installed."));confirmation(form,"I have reviewed the destination and will protect this profile.");submit(form,"Download profile",async()=>{await request(`/api/exports/${encodeURIComponent(record.id)}/profile`,{reviewed:true,test_all:test});body.closest("dialog").close();});},"button secondary"));
     details.append(button("Revoke all downloaded profiles",()=>{const body=openDialog("Revoke device access"),form=el("form");body.append(form);form.append(el("p","Every previously downloaded profile for this export will stop working. Download and distribute replacement profiles afterwards."));confirmation(form,"I understand this interrupts device access.");submit(form,"Revoke profiles",async()=>{await api("revoke_export_readers",{parameters:{export:record.id}});body.closest("dialog").close();});},"button danger"));parent.append(details);
   }
-  return {page};
+  async function reviewSnapshot(record,generation){
+    const old=decodeExportSnapshot(await api("get_export_snapshot",{parameters:{export:record.id,generation:String(generation)}}));
+    const current=record.generation?decodeExportSnapshot(await api("get_export_snapshot",{parameters:{export:record.id,generation:String(record.generation)}})):null;
+    const body=openDialog(`Snapshot ${generation} · compare with current publication`);
+    for(const change of snapshotDiff(current?.snapshot.items||[],old.snapshot.items))body.append(el("p",`${change.name}: ${change.before||"—"} → ${change.after||"—"}${change.changed?" · "+change.details.join("; "):" · unchanged"}`));
+    body.append(el("p","Restoring saves a draft with exact release pins and the earlier installation settings. Preview and publish that draft separately. Device installations are not rolled back automatically.","muted"));
+    if(old.unavailable_releases.length){body.append(el("p","This snapshot contains unavailable releases and cannot be restored.","callout warning"));return;}
+    const form=el("form");body.append(form);confirmation(form,"Replace the saved selection with these exact releases.");
+    submit(form,"Restore selection as draft",async()=>{await api("update_export",{parameters:{export:record.id},revision:record.revision,body:restoredDefinition(record.definition,old.snapshot)});body.closest("dialog").close();await navigate("exports",record.id);});
+  }
+  return {page, select(rows){pendingSelection=rows.slice(0,100);}, clearSelection(){pendingSelection=[];}};
+}
+
+export function restoredDefinition(current,snapshot){
+  const selections=new Map();
+  for(const item of snapshot.items){
+    if(typeof item.software!=="string"||typeof item.release!=="string"||!item.settings)throw new Error("Snapshot cannot provide a complete installation selection.");
+    let selection=selections.get(item.software);
+    if(selection&&selection.source.release!==item.release)throw new Error("Snapshot contains conflicting releases.");
+    if(!selection){selection={software:item.software,source:{kind:"release",release:item.release},architectures:[],settings:structuredClone(item.settings)};selections.set(item.software,selection);}
+    selection.architectures=[...new Set([...selection.architectures,...item.architectures])].sort();
+  }
+  return {...structuredClone(current),selections:[...selections.values()]};
+}
+export function snapshotDiff(before,after){
+  const group=items=>{const map=new Map();for(const item of items){if(!map.has(item.software))map.set(item.software,[]);map.get(item.software).push(item);}return map;};
+  const a=group(before),b=group(after),keys=[...new Set([...a.keys(),...b.keys()])];
+  const text=rows=>[...new Set(rows.map(i=>`${i.version} (${i.architectures.join(" / ")})`))].join(", ");
+  const identity=rows=>JSON.stringify(rows.map(i=>[i.release,i.digest,i.architectures,i.minimum_macos,i.maximum_macos,i.settings]).sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b))));
+  return keys.map(key=>{
+    const left=a.get(key)||[],right=b.get(key)||[],details=[];
+    const values=(rows,pick)=>JSON.stringify(rows.map(pick).sort((x,y)=>JSON.stringify(x).localeCompare(JSON.stringify(y))));
+    if(!left.length)details.push("Application added");else if(!right.length)details.push("Application removed");else{
+      if(values(left,i=>i.release)!==values(right,i=>i.release))details.push("Exact release changed");
+      if(values(left,i=>i.digest)!==values(right,i=>i.digest))details.push("Installer bytes changed");
+      if(values(left,i=>[i.architectures,i.minimum_macos,i.maximum_macos])!==values(right,i=>[i.architectures,i.minimum_macos,i.maximum_macos]))details.push("Hardware or macOS compatibility changed");
+      if(values(left,i=>i.settings)!==values(right,i=>i.settings))details.push("Installation or detection settings changed");
+    }
+    return {name:(right[0]||left[0]).name,before:text(left),after:text(right),changed:identity(left)!==identity(right),details};
+  });
 }
