@@ -3,6 +3,11 @@ export const starterSource = Object.freeze({
   locator: "https://github.com/autopkg/recipes.git",
   revision: "6c092b47e9c6324aa48758832b2597a0f3ff932e",
 });
+export const reviewedPresets = Object.freeze({
+  "com.github.autopkg.download.FirefoxSignedPkg": {name:"Firefox",title:"Mozilla signed installer (.pkg)",format:"pkg",application:"Firefox.app",bundle_id:"org.mozilla.firefox"},
+  "com.github.autopkg.download.ThunderbirdSignedPkg": {name:"Thunderbird",title:"Mozilla signed installer (.pkg)",format:"pkg",application:"Thunderbird.app",bundle_id:"org.mozilla.thunderbird"},
+  "com.github.autopkg.download.VLC": {name:"VLC",title:"VideoLAN application disk image (.dmg)",format:"dmg_app",application:"VLC.app",bundle_id:"org.videolan.vlc"},
+});
 const purposes = Object.freeze({
   fetch_artifact: "Download vendor artifact", build_artifact: "Build or copy package",
   install: "Install onto worker", publish: "Publish to another system", unknown: "Purpose needs review",
@@ -12,10 +17,10 @@ export function recipeChoice(entry, manifest) {
   const purpose = entry.guidance?.purpose || "unknown";
   const artifact = ["fetch_artifact", "build_artifact"].includes(purpose);
   const pins = entry.import_sources || [];
-  const preset = entry.identifier === "com.github.autopkg.download.FirefoxSignedPkg" &&
+  const preset = Boolean(reviewedPresets[entry.identifier]) &&
     purpose === "fetch_artifact" && pins.length === 1 &&
     pins[0].locator === starterSource.locator && pins[0].revision === starterSource.revision;
-  const name = preset ? "Firefox" : (entry.guidance?.name || entry.identifier.split(".").at(-1))
+  const name = preset ? reviewedPresets[entry.identifier].name : (entry.guidance?.name || entry.identifier.split(".").at(-1))
     .replace(/(?:SignedPkg|Pkg)$/, "").replace(/([a-z])([A-Z])/g, "$1 $2");
   let status = "Configure outputs", reason = "Review this source and configure its version, installer and architecture before testing.";
   let selectable = true;
@@ -37,7 +42,8 @@ export function recipeChoice(entry, manifest) {
     status = "Ready to configure"; reason = "Suggested output mappings for this exact source. Confirm artifact architecture, then test the build.";
   }
   return Object.freeze({ entry, name, purpose, artifact, diagnostics, selectable, status, reason,
-    recommended: preset && selectable, title: preset ? "Mozilla signed installer (.pkg)" : purposes[purpose],
+    recommended: preset && selectable, title: preset ? reviewedPresets[entry.identifier].title : purposes[purpose],
+    preset: preset ? reviewedPresets[entry.identifier] : null,
     outputs: preset ? { version: "version", artifact: "pathname", media: "application/octet-stream" } : null });
 }
 export function filterRecipeChoices(choices, view, query = "") {

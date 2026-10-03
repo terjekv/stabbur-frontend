@@ -12,6 +12,7 @@ import {
   decodeProblem,
   matchesFilter,
 } from "./model.js";
+import { createDelivery } from "./delivery.js";
 import { createWorkflows } from "./workflows.js";
 const root = document.querySelector("#app");
 const dialog = document.querySelector("#dialog");
@@ -23,6 +24,10 @@ let generation = 0;
 let expiryTimer;
 let cleanupView = () => {};
 const descriptions = {
+  delivery_changed: "The channel or repository changed. Refresh and review the current version before publishing.",
+  delivery_not_configured: "Ask the console administrator to configure private Munki delivery storage.",
+  delivery_admin_required: "Munki publication and device profiles require a Stabbur administrator.",
+  delivery_storage_unavailable: "Delivery storage is unavailable. Ask the console administrator to check free space and storage permissions.",
   permission_denied: "Your account does not have permission for this action.",
   revision_changed:
     "This item changed. Refresh and review it before trying again.",
@@ -165,9 +170,11 @@ async function request(path, payload, options = {}) {
     const url = URL.createObjectURL(blob);
     const link = element("a");
     link.href = url;
-    link.download = "stabbur-credential.json";
+    const filename=response.headers.get("content-disposition")?.match(/filename=([A-Za-z0-9_.-]+)/)?.[1];
+    link.download = filename || "stabbur-credential.json";
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+    if(filename === "Stabbur-Munki.mobileconfig") return {message:"Mac configuration profile downloaded. It contains a read-only repository credential; distribute it only to your managed Macs."};
     return {
       message:
         "Credential downloaded. Move it to protected storage; this value is shown only once.",
@@ -250,7 +257,7 @@ function renderShell() {
   sidebar.append(brand, element("p", "MANAGEMENT", "eyebrow"));
   const nav = element("nav");
   nav.setAttribute("aria-label", "Management");
-  for (const group of [...groups, { id: "discovery", title: "Add software from recipes" }, { id: "catalog", title: "Catalog plans" }]) {
+  for (const group of [groups[0], {id:"delivery",title:"Munki delivery"}, ...groups.slice(1), { id: "discovery", title: "Add software from recipes" }, { id: "catalog", title: "Catalog plans" }]) {
     const item = element("a", group.title, "nav-item");
     item.href = routeHash(group.id);
     item.dataset.group = group.id;
@@ -309,6 +316,7 @@ async function renderRoute() {
     }
     pendingCatalogImport = null;
     if (route.group === "discovery") return await workflows.discovery();
+    if (route.group === "delivery") return await delivery.page(route.id);
     if (
       route.id &&
       ["software", "targets", "runs", "releases"].includes(route.group)
@@ -341,7 +349,7 @@ async function loadGroup(group) {
   const { main, head } = heading(group.title, group.description);
   const actions = element("div", null, "actions");
   actions.append(button("Refresh", () => loadGroup(group), "button secondary"));
-  if (["recipes", "workers"].includes(group.id))
+  if (["software", "recipes", "workers"].includes(group.id))
     actions.append(button("Add software from recipes", () => navigate("discovery"), "button primary"));
   if (group.create)
     actions.append(
@@ -1031,7 +1039,7 @@ function operationForm(id, parameters = {}, revision, initial = {}) {
   });
   body.append(form);
 }
-const workflows = createWorkflows({
+const workflowUI = {
   api,
   request,
   element,
@@ -1092,7 +1100,9 @@ const workflows = createWorkflows({
   cleanup(callback) {
     cleanupView = callback;
   },
-});
+};
+const workflows = createWorkflows(workflowUI);
+const delivery = createDelivery(workflowUI);
 window.addEventListener("hashchange", () => {
   renderRoute().catch(showError);
 });

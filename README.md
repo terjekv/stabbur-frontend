@@ -90,7 +90,7 @@ acceptance evidence as the supported client and CLI. No server image is publishe
 
 ## Add software from recipes
 
-Open **Add software from recipes**, choose a worker inventory, or use **Firefox starter source**
+Open **Add software from recipes**, choose a worker inventory, or use **Use reviewed starter recipes**
 and scan the displayed immutable commit. Scan progress updates automatically. Workers publish
 local inventory with `--discover-autopkg`; `--autopkg-prefs` optionally selects their local profile.
 
@@ -104,7 +104,7 @@ automatically. Manual catalog definitions remain available for separately review
 
 Each selected installer has its own architecture, minimum macOS and advanced output settings. No
 architecture is inferred from the worker. FirefoxSignedPkg at the starter pin suggests `version` and
-`pathname`. Other recipes require explicit reviewed output mappings. The imported target stays disabled
+`pathname`; Thunderbird and VLC have equivalent reviewed mappings at that source pin. Other recipes require explicit reviewed output mappings. The imported target stays disabled
 and manual. Review and enable it, build once, inspect the release's artifact and verification results,
 then promote or configure scheduling. Failures show their cause above the logs. Logs retain separate
 incremental UTF-8 streams per attempt so interleaved partial messages remain readable.
@@ -112,3 +112,49 @@ incremental UTF-8 streams per attempt so interleaved partial messages remain rea
 Coordinated local development requires the updated server and client beside this checkout. Old catalog
 snapshots remain readable but need rescanning for guided import. This is local development evidence,
 not an immutable-image release compatibility claim.
+
+
+## Guided builds and managed Munki delivery
+
+Software pages show the next action from setup through build, review, testing and delivery.
+**Review and build** checks recent worker capabilities, displays the exact recipe source pins,
+and enables and triggers a manual target only after explicit review. The starter source now has
+reviewed output and delivery suggestions for Firefox, Thunderbird and VLC. Architecture remains
+an operator-confirmed property of the installer. Other recipes retain explicit output settings.
+
+Set `STABBUR_FRONTEND_DATA_DIR` to a private, persistent directory to enable **Munki delivery**.
+The macOS test installer supplies this automatically. One console process owns the directory;
+a second process is refused. Back up the entire directory together. The existing console HTTPS
+origin also serves `/munki/testing` and `/munki/stable`; proxy those routes without browser SSO,
+because devices authenticate with their separate read-only repository credential. Production
+requires HTTPS. Loopback development repositories can serve only the local test Mac.
+
+A Stabbur administrator promotes an exact release to testing, opens its Munki delivery page,
+and reviews the installer format, architecture, macOS compatibility and installed-state detection.
+Publication streams and verifies the artifact, checks its PKG/DMG format markers, rechecks the
+upstream selection and authorization, and appends a durable delivery snapshot. It does not run
+installer scripts or accept recipe trust. Packages and application disk images are supported.
+Application detection uses the exact release version as `CFBundleShortVersionString`; receipt
+detection uses it as the package receipt version. A differing detection version requires correcting
+the recipe output. Stable publication requires the administrator to attest that installation and
+a second update check succeeded on a test Mac; this is an attestation, not device telemetry.
+
+The console creates catalogs and manifests and serves verified installer bytes. Download the
+macOS configuration profile from the UI and install it on a disposable Mac with Munki already
+installed. Use one delivery profile per Mac. The general profile offers optional installations in
+Managed Software Center; the application-specific profile requests that application's installation.
+Profiles contain a repository read credential and must be distributed only to managed Macs.
+They contain no Stabbur credentials. The reader credential is persistent across restarts, and never
+appears in ordinary API output, browser storage or URLs. To rotate it, stop the console, remove only
+its `reader` file, restart and redistribute fresh profiles; already deployed profiles stop working.
+
+Publishing a new version replaces overlapping architecture selections for that software/channel.
+Versions are opaque and are never sorted to choose a release. Removal and console-initiated release
+withdrawal remove current catalogs, manifests and access to the removed installer; immutable bytes
+and append-only publication history remain for audit. An already downloaded or installed copy cannot
+be recalled. Withdrawal through another API client does not automatically update this independent
+snapshot: remove that version in **Munki delivery** as part of the same incident response.
+
+The console must be available for device downloads. Deploy one writer with persistent storage;
+replication, multi-writer hosting and automatic external-repository synchronization are not provided.
+The existing CLI `munki-export` remains available for independently operated repositories.

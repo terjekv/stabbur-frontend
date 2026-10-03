@@ -1,4 +1,5 @@
 //! Self-hosted management console: Stabbur credentials stay on the server.
+mod delivery;
 mod operations;
 mod security;
 
@@ -143,6 +144,7 @@ struct State {
     sessions: Sessions,
     limiter: LoginLimiter,
     contract: Contract,
+    delivery: Option<delivery::Repository>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -214,12 +216,23 @@ async fn operation(
 ) -> Result<HttpResponse, Failure> {
     let session = state.sessions.authenticate(&request, &state.config)?;
     session.mutation(&request, &state.config.public)?;
-    let operation = ValidatedOperation::resolve(&state.contract, &id, input.into_inner())?;
+    let input = input.into_inner();
+    let operation = ValidatedOperation::resolve(&state.contract, &id, input)?;
     let response = session
         .client()
         .raw(operation.request())
         .await
         .map_err(Failure::from)?;
+    if let (Some(repo), Some(release)) = (&state.delivery, operation.withdrawn_release()) {
+        let actor = session
+            .client()
+            .me()
+            .await
+            .map_err(Failure::from)?
+            .id
+            .to_string();
+        repo.withdraw(release, &actor).await?;
+    }
     if operation.credential_download() {
         return Ok(HttpResponse::Ok()
             .insert_header((
@@ -363,6 +376,10 @@ async fn asset(path: web::Path<String>) -> HttpResponse {
             "text/javascript; charset=utf-8",
             include_str!("../public/recipe-model.js"),
         ),
+        "delivery.js" => (
+            "text/javascript; charset=utf-8",
+            include_str!("../public/delivery.js"),
+        ),
         "workflows.js" => (
             "text/javascript; charset=utf-8",
             include_str!("../public/workflows.js"),
@@ -386,7 +403,15 @@ fn routes(config: &mut web::ServiceConfig) {
         .route("/api/operation/{id}", web::post().to(operation))
         .route("/api/catalog/{action}", web::post().to(catalog))
         .route("/api/recipe-import", web::post().to(prepare_import))
-        .route("/api/download/{digest}", web::get().to(download));
+        .route("/api/download/{digest}", web::get().to(download))
+        .route("/api/delivery", web::get().to(delivery::status))
+        .route("/api/delivery/publish", web::post().to(delivery::publish))
+        .route("/api/delivery/remove", web::post().to(delivery::remove))
+        .route("/api/delivery/profile", web::post().to(delivery::profile))
+        .route(
+            "/munki/{channel}/{kind}/{name}",
+            web::get().to(delivery::serve),
+        );
 }
 fn security_headers() -> DefaultHeaders {
     DefaultHeaders::new().add(("content-security-policy", "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"))
@@ -402,12 +427,17 @@ async fn main() -> std::io::Result<()> {
         .map_err(|_| std::io::Error::other("invalid upstream client configuration"))?;
     let contract = serde_json::from_str(include_str!("../public/contract.json"))
         .map_err(|_| std::io::Error::other("invalid embedded gateway contract"))?;
+    let delivery = std::env::var_os("STABBUR_FRONTEND_DATA_DIR")
+        .map(|root| delivery::Repository::open(std::path::Path::new(&root)))
+        .transpose()
+        .map_err(|_| std::io::Error::other("delivery storage initialization failed"))?;
     let state = web::Data::new(State {
         config,
         public_client,
         sessions: Sessions::default(),
         limiter: LoginLimiter::default(),
         contract,
+        delivery,
     });
     HttpServer::new(move || {
         App::new()
@@ -451,6 +481,7 @@ mod tests {
                 sessions: Sessions::default(),
                 limiter: LoginLimiter::default(),
                 contract: serde_json::from_str(include_str!("../public/contract.json")).unwrap(),
+                delivery: None,
             });
             let app = actix_web::test::init_service(
                 App::new()
@@ -568,6 +599,7 @@ mod tests {
             sessions: Sessions::default(),
             limiter: LoginLimiter::default(),
             contract: serde_json::from_str(include_str!("../public/contract.json")).unwrap(),
+            delivery: None,
         });
         let app = actix_web::test::init_service(
             App::new()
