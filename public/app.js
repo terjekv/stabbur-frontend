@@ -257,7 +257,7 @@ function renderShell() {
   sidebar.append(brand, element("p", "MANAGEMENT", "eyebrow"));
   const nav = element("nav");
   nav.setAttribute("aria-label", "Management");
-  for (const group of [groups[0], {id:"delivery",title:"Munki delivery"}, ...groups.slice(1), { id: "discovery", title: "Add software from recipes" }, { id: "catalog", title: "Catalog plans" }]) {
+  for (const group of [groups[0], { id: "discovery", title: "Add software from recipes" }, {id:"delivery",title:"Munki delivery"}, ...groups.slice(1), { id: "catalog", title: "Catalog plans" }]) {
     const item = element("a", group.title, "nav-item");
     item.href = routeHash(group.id);
     item.dataset.group = group.id;

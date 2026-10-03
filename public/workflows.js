@@ -517,7 +517,7 @@ export function createWorkflows(ui) {
         const workers=await collection("list_workers");
         const ready=workers.filter(w=>w.enabled && !w.draining && Date.now()-Date.parse(w.last_seen_at)<180000);
         const recipes=await collection("list_recipes");
-        const revisions=(await mapBounded(recipes,r=>collection("list_recipe_revisions",{recipe:r.id}))).flat();
+        const revisions=(await mapBounded(recipes,r=>list("list_recipe_revisions",{recipe:r.id}))).flat();
         const recipe=revisions.find(r=>r.id===target.recipe_revision_id);
         if(!recipe)throw new Error("The selected recipe revision could not be loaded. Refresh before building.");
         const matches=ready.filter(w=>([...(recipe.required_capabilities||[]), ...(recipe.builder==="autopkg"?["builder.autopkg","os.macos"]:["builder.fake"])]).every(c=>w.advertised_capabilities?.includes(c)&&w.allowed_capabilities?.includes(c)));

@@ -475,12 +475,18 @@ fn package_info(
     }
     Ok(info)
 }
+/// The only production constructor is the bounded hash-and-format verifier below.
+struct VerifiedInstaller {
+    digest: Sha256Digest,
+    size: u64,
+    format: Format,
+}
 async fn verified_download(
     repo: &Repository,
     publisher: &Publisher,
     resolution: &Resolution,
     format: Format,
-) -> Result<(), Failure> {
+) -> Result<VerifiedInstaller, Failure> {
     let temp = tempfile::NamedTempFile::new_in(repo.root.join("staging")).map_err(storage_error)?;
     let mut file = tokio::fs::File::from_std(temp.reopen().map_err(storage_error)?);
     let download = publisher
@@ -561,7 +567,11 @@ async fn verified_download(
     } else {
         temp.persist_noclobber(destination).map_err(storage_error)?;
     }
-    Ok(())
+    Ok(VerifiedInstaller {
+        digest: resolution.artifact_digest.clone(),
+        size,
+        format,
+    })
 }
 pub async fn publish(
     request: HttpRequest,
@@ -585,7 +595,7 @@ pub async fn publish(
     }
     let (software, resolution) = resolve(&publisher, &input).await?;
     let info = package_info(&input.spec, &software, &resolution)?;
-    verified_download(repo, &publisher, &resolution, input.spec.0.format).await?;
+    let verified = verified_download(repo, &publisher, &resolution, input.spec.0.format).await?;
     let mut current = repo.snapshot.lock().await;
     if current.revision != input.expected_revision {
         return Err(stale());
@@ -597,6 +607,7 @@ pub async fn publish(
         return Err(stale());
     }
     let mut raw_spec = input.spec.0.clone();
+    raw_spec.format = verified.format;
     raw_spec.architecture = match resolution.variant.architecture.as_str() {
         "aarch64" => Architecture::Aarch64,
         "x86_64" => Architecture::X86_64,
@@ -608,8 +619,8 @@ pub async fn publish(
         release: resolution.release.id,
         version: resolution.release.version,
         name: software.name,
-        digest: resolution.artifact_digest,
-        size: resolution.artifact_size,
+        digest: verified.digest,
+        size: verified.size,
         pkginfo: info,
         published_at: Utc::now().to_rfc3339(),
         tested: input.test_confirmed,

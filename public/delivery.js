@@ -37,7 +37,7 @@ export function createDelivery(ui) {
   }
   function submit(form,text,action) {
     const control=el("button",text,"button primary");control.type="submit";form.append(control);
-    form.addEventListener("submit",async event=>{event.preventDefault();if(!form.reportValidity())return;control.disabled=true;try{await action();}catch(error){showError(error);}finally{control.disabled=false;}});
+    form.addEventListener("submit",async event=>{event.preventDefault();if(!form.reportValidity())return;control.disabled=true;control.textContent=text.startsWith("Publish")?"Verifying installer and publishing…":"Applying…";try{await action();}catch(error){showError(error);}finally{control.disabled=false;control.textContent=text;}});
     return control;
   }
   async function page(softwareId) {
@@ -49,7 +49,7 @@ export function createDelivery(ui) {
       main.append(el("p","Munki delivery has not been configured on this console. The macOS test installer configures it automatically. For a separate deployment, the console administrator must configure its private delivery storage.","callout warning"));return;
     }
     main.append(el("p","Devices use a separate read-only repository credential. Stabbur login credentials are never sent to them.","muted"));
-    const destination=el("section",null,"panel");destination.append(el("h2","Repository"),el("p",state.url),el("p",state.updated_at?`Last change: ${state.last_action} · ${formatTime(state.updated_at)}`:"No installers published yet.","muted"));main.append(destination);
+    const destination=el("section",null,"panel resource-section");destination.append(el("h2","Repository"),el("p",`Testing: ${state.url}/testing`),el("p",`Stable: ${state.url}/stable`),el("p",state.updated_at?`Last change: ${state.last_action} · ${formatTime(state.updated_at)}`:"No installers published yet.","muted"));main.append(destination);
     for(const channel of ["testing","stable"]) destination.append(button(`Download ${channel} Mac profile`,async()=>{
       try {await request("/api/delivery/profile",{channel});}catch(error){showError(error);}
     },"button secondary"));
@@ -60,12 +60,12 @@ export function createDelivery(ui) {
       const channels=(await api("list_channels",{parameters:{software:software.id}}));
       if(!ui.current(token))return;
       const items=Array.isArray(channels)?channels:channels.items;
-      const panel=el("section",null,"panel");panel.append(el("h2",software.name),link("Back to software","software",software.id));
+      const panel=el("section",null,"panel resource-section");panel.append(el("h2",software.name),link("Back to software","software",software.id));
       if(!items.length)panel.append(el("p","First review a successful build and promote its release to testing.","callout"));
       for(const channel of items.filter(c=>["testing","stable"].includes(c.name)))panel.append(button(`Publish ${software.name} to ${channel.name}`,()=>publishForm(software,channel,state),"button primary"));
       main.append(panel);
-    }else main.append(link("Choose software to publish","software"));
-    const published=el("section",null,"panel");published.append(el("h2","Published versions"));main.append(published);
+    }else destination.append(link("Choose software to publish","software"));
+    const published=el("section",null,"panel resource-section");published.append(el("h2","Published versions"));main.append(published);
     const entries=state.entries;
     if(!entries.length)published.append(el("p","No versions are available to Munki yet. Publishing a Stabbur channel alone does not add it here.","muted"));
     for(const entry of entries) {
@@ -78,7 +78,7 @@ export function createDelivery(ui) {
         confirm(form,"I have reviewed this removal.");submit(form,"Remove published version",async()=>{await request("/api/delivery/remove",{release:entry.release,expected_revision:state.revision,reviewed:true});await navigate("delivery",softwareId);});
       },"button danger"));card.append(actions);published.append(card);
     }
-    const test=el("section",null,"panel");test.append(el("h2","Test before stable delivery"));
+    const test=el("section",null,"panel resource-section");test.append(el("h2","Test before stable delivery"));
     const steps=el("ol");for(const text of ["Publish to testing and install the application-specific profile on a disposable test Mac.","Open Managed Software Center, check for updates, and install the application.","Open the application and confirm its version. Check for updates again; the same version must not be offered again.","For an upgrade, start with the previous version installed and repeat the checks.","Promote the tested release to stable, then publish it here and confirm the test passed."])steps.append(el("li",text));
     test.append(steps);main.append(test);
   }
